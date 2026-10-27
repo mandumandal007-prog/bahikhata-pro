@@ -8,8 +8,10 @@ plugins {
 
 // ---- Firebase config (optional) -------------------------------------------------
 // Read from env GOOGLE_SERVICES_JSON (GitHub secret) or app/google-services.json.
-// Only the client registered for com.bahikhata.app is used. Without it the app runs offline.
-val appPackage = "com.bahikhata.app"
+// Only the client registered for the applicationId is used. Without it the app runs offline.
+// NOTE: the Firebase app was registered as "com.bhaikhata.app", so that is the installed app id.
+// The Kotlin package / namespace stays com.bahikhata.app.
+val appPackage = "com.bhaikhata.app"
 val gsText: String? = System.getenv("GOOGLE_SERVICES_JSON")?.takeIf { it.isNotBlank() }
     ?: file("google-services.json").takeIf { it.exists() }?.readText()
 var fbApiKey = ""
@@ -47,7 +49,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.bahikhata.app"
+        applicationId = appPackage
         minSdk = 26
         targetSdk = 35
         versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
