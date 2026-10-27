@@ -432,7 +432,10 @@ object Repo {
     }
 
     fun nextQuoteNumber(): String {
-        val n = invoices().count { it.isQuote } + 1
+        // max existing QT number + 1, so numbers never repeat after a delete
+        val n = (invoices().filter { it.isQuote }.maxOfOrNull { q ->
+            Regex("(\\d+)\\D*$").find(q.number)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        } ?: 0) + 1
         return "QT-" + n.toString().padStart(4, '0')
     }
 

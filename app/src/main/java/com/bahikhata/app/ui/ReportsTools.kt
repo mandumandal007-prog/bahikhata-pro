@@ -2,6 +2,8 @@
 
 package com.bahikhata.app.ui
 
+import com.bahikhata.app.data.balanceDue
+
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -227,7 +229,7 @@ fun ReportsScreen(nav: Nav) {
             KeyValue("Kul bills", bills.size.toString())
             KeyValue("Kul bikri", rupees(billTotal), bold = true)
             KeyValue("Usme GST", rupees(billGst))
-            KeyValue("Baaki (unpaid)", rupees(bills.filter { !it.paid }.sumOf { it.total }), color = GaveRed)
+            KeyValue("Baaki (unpaid)", rupees(bills.filter { !it.isQuote }.sumOf { it.balanceDue }), color = GaveRed)
         }
         if (expenseByCat.isNotEmpty()) SectionCard("Kharch kahan hua ($periodLabel)") {
             val max = expenseByCat.maxOf { it.value }.coerceAtLeast(1.0)

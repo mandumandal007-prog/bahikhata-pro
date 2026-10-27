@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -57,13 +58,13 @@ import com.bahikhata.app.util.shareFile
 import com.bahikhata.app.util.whatsapp
 import kotlin.math.abs
 
-private fun balanceLabel(b: Double): String = when {
+internal fun balanceLabel(b: Double): String = when {
     b > 0.005 -> "Lena hai"
     b < -0.005 -> "Dena hai"
     else -> "Hisaab barabar"
 }
 
-private fun balanceColor(b: Double) = when {
+internal fun balanceColor(b: Double) = when {
     b > 0.005 -> GaveRed
     b < -0.005 -> GotGreen
     else -> Color(0xFF8E8E93)
@@ -76,7 +77,19 @@ fun KhataScreen(nav: Nav) {
     var filter by remember { mutableStateOf(S.khataFilter.takeIf { it in listOf("Customers", "Suppliers", "Sab") } ?: "Customers") }
     var query by remember { mutableStateOf("") }
     var adding by remember { mutableStateOf(false) }
-    val sortBy = remember(tick) { S.sortParties }
+    var quick by remember { mutableStateOf(false) }
+    var bulk by remember { mutableStateOf<List<Party>?>(null) }
+    var swipeMenu by remember { mutableStateOf<Party?>(null) }
+    var editP by remember { mutableStateOf<Party?>(null) }
+    var savedMsg by remember { mutableStateOf<String?>(null) }
+    var showTips by remember { mutableStateOf(Repo.setting("tips_seen_v42", "0") != "1") }
+    var bal by remember { mutableStateOf("Sab") }          // Sab | Lena hai | Dena hai | Barabar | Due nikli
+    val ctx = LocalContext.current
+    val haptic = rememberHaptic()
+    val shopName = remember { Repo.businessName() }
+    var sortOverride by remember { mutableStateOf<String?>(null) }
+    var sortSheet by remember { mutableStateOf(false) }
+    val sortBy = sortOverride ?: remember(tick) { S.sortParties }
     val homeToday = remember(tick) { S.homeToday }
     val homeOverdue = remember(tick) { S.homeOverdue }
     val rowOpts = remember(tick) { RowOpts(S.listPhone, S.listPhotos, S.listCompact, S.dueBadge) }
@@ -87,11 +100,20 @@ fun KhataScreen(nav: Nav) {
             System.currentTimeMillis() - maxOf(S.lastBackup, all.minOf { it.createdAt }) > 7L * 86_400_000L
     }
 
+    val dueAll = remember(tick) { Repo.overdueParties() }
     val willGet = all.filter { it.balance > 0 }.sumOf { it.balance }
     val willGive = all.filter { it.balance < 0 }.sumOf { -it.balance }
     val shown = all.filter {
         (filter == "Sab" || (filter == "Customers" && it.type == "CUSTOMER") || (filter == "Suppliers" && it.type == "SUPPLIER")) &&
-            (query.isBlank() || it.name.contains(query, true) || it.phone.contains(query))
+            (query.isBlank() || it.name.contains(query, true) || it.phone.contains(query) ||
+                (query.trim().toDoubleOrNull()?.let { q -> abs(abs(it.balance) - q) < 0.5 } ?: false)) &&
+            when (bal) {
+                "Lena hai" -> it.balance > 0.005
+                "Dena hai" -> it.balance < -0.005
+                "Barabar" -> abs(it.balance) <= 0.005
+                "Due nikli" -> it.balance > 0.005 && it.id in dueAll
+                else -> true
+            }
     }.let { l ->
         when (sortBy) {
             "name" -> l.sortedBy { it.name.lowercase() }
@@ -134,29 +156,119 @@ fun KhataScreen(nav: Nav) {
                     OverdueStrip(all) { nav.go(Screen.PartyDetail(it)) }
                 }
                 Spacer(Modifier.height(14.dp))
-                ChipsRow(listOf("Customers", "Suppliers", "Sab"), filter, { filter = it })
-                Spacer(Modifier.height(14.dp))
+                ChipsRow(listOf("Customers", "Suppliers", "Sab"), filter, { filter = it; haptic() })
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IosPills(listOf("Sab", "Lena hai", "Dena hai", "Barabar", "Due nikli"), bal, { bal = it; haptic() }, Modifier.weight(1f))
+                    Spacer(Modifier.width(6.dp))
+                    Box(Modifier.size(34.dp).clip(CircleShape).background(ios.sheetCell).clickable { sortSheet = true }, contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.SwapVert, "Sort", tint = ios.tint, modifier = Modifier.size(20.dp))
+                    }
+                }
+                if (all.isNotEmpty()) {
+                    val sum = shown.sumOf { it.balance }
+                    Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("${shown.size} log" + (if (abs(sum) > 0.005) " · ${balanceLabel(sum)} ${rupees(abs(sum))}" else "") +
+                            " · " + sortLabel(sortBy), fontSize = 12.sp, color = ios.secondaryLabel, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val remindable = shown.filter { it.balance > 0.005 && it.phone.isNotBlank() }
+                        if ((bal == "Lena hai" || bal == "Due nikli") && remindable.isNotEmpty()) {
+                            Text("Sabko reminder (${remindable.size})", fontSize = 13.sp, color = GotGreen, fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { bulk = remindable }.padding(horizontal = 6.dp, vertical = 4.dp))
+                        }
+                    }
+                }
+                if (query.isBlank() && bal == "Sab") {
+                    val overdueRem = all.filter { it.id in dueAll && it.balance > 0.005 && it.phone.isNotBlank() }
+                    if (overdueRem.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(GotGreen.copy(alpha = 0.12f))
+                            .clickable { bulk = overdueRem.sortedByDescending { it.balance } }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Campaign, null, tint = GotGreen)
+                            Spacer(Modifier.width(10.dp))
+                            Text("${overdueRem.size} logon ki due nikal gayi — sabko WhatsApp reminder bhejein", fontSize = 14.sp, color = ios.label, modifier = Modifier.weight(1f))
+                            Chevron()
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
             }
             if (shown.isEmpty()) item {
-                EmptyState(Icons.Outlined.People, if (all.isEmpty()) "Pehla customer jodein — neeche + dabayein" else "Koi nahi mila")
+                when {
+                    all.isEmpty() -> EmptyHint(Icons.Outlined.People, "Pehla customer jodein",
+                        "Naam aur number daalein, phir Diye / Mile likhein. Ya ⚡ Jaldi entry se seedha shuru karein.", "Customer jodein") { adding = true }
+                    query.isNotBlank() -> EmptyHint(Icons.Outlined.Search, "\"$query\" nahi mila",
+                        "Naam, phone ya rakam se dhoondh sakte hain. Naya banana hai?", "\"$query\" ko jodein") { adding = true }
+                    bal == "Due nikli" -> EmptyHint(Icons.Outlined.CheckCircle, "Kisi ki due nahi nikli 🎉", "Sab time par hai. Entry me due date daalne se yahan dikhega.")
+                    bal == "Barabar" -> EmptyHint(Icons.Outlined.CheckCircle, "Koi hisaab barabar nahi", "Jiska lena-dena zero ho jata hai, woh yahan dikhta hai.")
+                    else -> EmptyHint(Icons.Outlined.FilterList, "Is filter me koi nahi", "Upar doosra filter chunein ya 'Sab' dabayein.", "Sab dikhayein") { bal = "Sab"; filter = "Sab" }
+                }
             }
             itemsIndexed(shown, key = { _, p -> p.id }) { i, p ->
-                PartyRow(p, i, shown.size, rowOpts, p.id in dueIds) { nav.go(Screen.PartyDetail(p.id)) }
+                SwipeActionsRow(i, shown.size, enabled = true,
+                    onSwipeRight = {
+                        if (p.phone.isBlank()) swipeMenu = p
+                        else whatsapp(ctx, p.phone, if (p.balance > 0.005) S.reminderText(p.name, rupees(p.balance), shopName, true)
+                            else "Namaste ${p.name} ji, $shopName ke saath aapka hisaab: ${balanceLabel(p.balance)} ${rupees(abs(p.balance))}. Dhanyavaad 🙏")
+                    },
+                    onSwipeLeft = { swipeMenu = p },
+                    modifier = Modifier.animateItem()
+                ) {
+                    PartyRow(p, i, shown.size, rowOpts, p.id in dueIds) { nav.go(Screen.PartyDetail(p.id)) }
+                }
             }
         }
-        ExtendedFloatingActionButton(
-            onClick = { adding = true },
-            icon = { Icon(Icons.Filled.PersonAdd, null) },
-            text = { Text(if (filter == "Suppliers") "Supplier jodein" else "Customer jodein") },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
-        )
+        Column(Modifier.align(Alignment.BottomEnd).padding(16.dp), horizontalAlignment = Alignment.End) {
+            Box(Modifier.shadow(8.dp, CircleShape).size(52.dp).clip(CircleShape).background(IosOrange)
+                .clickable { haptic(); quick = true }, contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.Bolt, "Jaldi entry", tint = Color.White, modifier = Modifier.size(28.dp))
+            }
+            Spacer(Modifier.height(12.dp))
+            ExtendedFloatingActionButton(
+                onClick = { adding = true },
+                icon = { Icon(Icons.Filled.PersonAdd, null) },
+                text = { Text(if (filter == "Suppliers") "Supplier jodein" else "Customer jodein") }
+            )
+        }
+        androidx.compose.animation.AnimatedVisibility(savedMsg != null, Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically(),
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically()) {
+            Row(Modifier.shadow(6.dp, CircleShape).clip(CircleShape).background(ios.sheetBg).padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.CheckCircle, null, tint = GotGreen, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(savedMsg ?: "", fontSize = 14.sp, color = ios.label, fontWeight = FontWeight.Medium)
+            }
+        }
     }
+    LaunchedEffect(savedMsg) { if (savedMsg != null) { kotlinx.coroutines.delay(2200); savedMsg = null } }
+    if (quick) QuickEntrySheet(onDismiss = { quick = false }) { pid, g, a ->
+        quick = false
+        savedMsg = "${Repo.party(pid)?.name ?: ""}: ${if (g) "Diye" else "Mile"} ${rupees(a)} ✓"
+    }
+    bulk?.let { BulkReminderSheet(it) { bulk = null } }
+    if (showTips) TipsCarousel { showTips = false; Repo.setSetting("tips_seen_v42", "1") }
+    if (sortSheet) IosActionSheet("Kis hisaab se lagayein?", listOf(
+        "balance" to "Sabse zyada rakam pehle", "name" to "Naam (A–Z)", "recent" to "Haal ki entry pehle", "new" to "Naye pehle", "old" to "Purane pehle"
+    ).map { (k, t) -> SheetAction((if (k == sortBy) "✓ " else "") + t) { sortOverride = k; haptic() } }) { sortSheet = false }
+    swipeMenu?.let { p ->
+        IosActionSheet(p.name, buildList {
+            if (p.phone.isNotBlank()) add(SheetAction("Call karein: ${p.phone}") { call(ctx, p.phone) })
+            if (p.phone.isNotBlank()) add(SheetAction("WhatsApp reminder") { whatsapp(ctx, p.phone, S.reminderText(p.name, rupees(abs(p.balance)), shopName, true)) })
+            add(SheetAction(if (p.phone.isBlank()) "Number jodein / Edit" else "Party edit karein") { editP = p })
+            add(SheetAction("Khata kholein") { nav.go(Screen.PartyDetail(p.id)) })
+        }) { swipeMenu = null }
+    }
+    editP?.let { p -> PartyDialog(p, p.type, onDismiss = { editP = null }) { editP = null } }
     if (adding) {
         PartyDialog(null, if (filter == "Suppliers") "SUPPLIER" else "CUSTOMER", onDismiss = { adding = false }) { id ->
             adding = false
             nav.go(Screen.PartyDetail(id))
         }
     }
+}
+
+private fun sortLabel(s: String) = when (s) {
+    "name" -> "Naam se"; "recent" -> "Haal ki entry"; "new" -> "Naye pehle"; "old" -> "Purane pehle"; else -> "Rakam se"
 }
 
 /** Party list look (Settings → Khata). */
@@ -318,6 +430,7 @@ fun PartyScreen(id: Long, nav: Nav) {
         entries.map { e -> b += if (e.gave) e.amount else -e.amount; e to b }.reversed()
     }
     var newEntry by remember { mutableStateOf<Boolean?>(null) } // true = gave, false = got
+    val haptic = rememberHaptic()
     var editEntry by remember { mutableStateOf<Entry?>(null) }
     var editParty by remember { mutableStateOf(false) }
     var delParty by remember { mutableStateOf(false) }
@@ -386,10 +499,11 @@ fun PartyScreen(id: Long, nav: Nav) {
                 }
             }
             if (running.isEmpty()) item {
-                EmptyState(Icons.AutoMirrored.Outlined.ReceiptLong, "Abhi koi entry nahi. Neeche DIYE ya MILE dabayein.")
+                EmptyHint(Icons.AutoMirrored.Outlined.ReceiptLong, "Abhi koi entry nahi",
+                    "Udhaar diya to laal DIYE dabayein, paisa mila to hara MILE. Hisaab apne aap banega.")
             }
             itemsIndexed(running, key = { _, r -> r.first.id }) { i, (e, bal) ->
-                GroupCell(i, running.size, onClick = { editEntry = e }) {
+                GroupCell(i, running.size, modifier = Modifier.animateItem(), onClick = { editEntry = e }) {
                     Column(Modifier.weight(1.4f)) {
                         Text(fmtDate(e.date), fontSize = 15.sp, color = ios.label)
                         if (showRunning) Text("Bal. ${rupees(abs(bal))}", fontSize = 12.sp, color = balanceColor(bal))
@@ -428,6 +542,7 @@ fun PartyScreen(id: Long, nav: Nav) {
     newEntry?.let { gave ->
         EntryDialog(party.name, gave, null, onDismiss = { newEntry = null }) { g, amt, mode, note, date, due ->
             Repo.addEntry(id, g, amt, mode, note, date, due)
+            haptic()
             newEntry = null
         }
     }

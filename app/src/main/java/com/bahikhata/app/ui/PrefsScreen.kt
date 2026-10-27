@@ -187,13 +187,14 @@ private fun BillPrefs() {
     SectionFooter("Agla bill number: ${Repo.nextInvoiceNumber()}")
 
     SectionHeader("PDF (statement aur bill)")
-    ChoiceRow(0, 5, Icons.Filled.Palette, Color(0xFFFFCC00), "PDF ka rang", "pdf_theme", "gold", listOf(
+    ChoiceRow(0, 6, Icons.Filled.Palette, Color(0xFFFFCC00), "PDF ka rang", "pdf_theme", "gold", listOf(
         "gold" to "Navy + Gold", "blue" to "Royal Blue", "green" to "Emerald Green", "maroon" to "Maroon + Gold", "black" to "Classic Black"))
-    SwitchRow(1, 5, Icons.Filled.AccountCircle, Color(0xFFFF9500), "Statement me party photo", null, "pdf_photo", true)
-    SwitchRow(2, 5, Icons.Filled.QrCode2, Color(0xFF5856D6), "PDF par UPI ID", "UPI ID Khata settings me daalein", "pdf_upi", true)
-    TextRow(3, 5, Icons.Filled.Draw, Color(0xFF007AFF), "Sign ke neeche naam", "pdf_signatory", "", "Authorised Signatory",
+    SwitchRow(1, 6, Icons.Filled.AccountCircle, Color(0xFFFF9500), "Statement me party photo", null, "pdf_photo", true)
+    SwitchRow(2, 6, Icons.Filled.QrCode2, Color(0xFF5856D6), "PDF par UPI ID", "UPI ID Khata settings me daalein", "pdf_upi", true)
+    SwitchRow(3, 6, Icons.Filled.QrCodeScanner, Color(0xFF34C759), "Bill par UPI QR (scan & pay)", "Unpaid bill PDF par baaki rakam ka QR", "bill_qr", true)
+    TextRow(4, 6, Icons.Filled.Draw, Color(0xFF007AFF), "Sign ke neeche naam", "pdf_signatory", "", "Authorised Signatory",
         help = "Jaise: Mandu (Proprietor)")
-    TextRow(4, 5, Icons.Filled.ShortText, Color(0xFF34C759), "Bill ki footer line", "pdf_footer", "", "Thank you for your business!",
+    TextRow(5, 6, Icons.Filled.ShortText, Color(0xFF34C759), "Bill ki footer line", "pdf_footer", "", "Thank you for your business!",
         help = "Bill PDF ke neeche ek line. Jaise: Dhanyavaad, phir padharein 🙏")
 }
 
