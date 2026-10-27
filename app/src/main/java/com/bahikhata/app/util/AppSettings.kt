@@ -28,6 +28,8 @@ object S {
     val runningBal get() = b("running_bal", true)
     val confirmDelete get() = b("confirm_del", true)
     val defMode get() = g("def_mode", "CASH")
+    val homeToday get() = b("home_today", true)        // Khata home: aaj ka hisaab card
+    val homeOverdue get() = b("home_overdue", true)    // Khata home: due nikal gayi strip
     val defDueDays get() = g("def_due_days", "0").toIntOrNull() ?: 0
     val reminderTpl get() = g("reminder_tpl", "")
     val upiId get() = g("upi_id", "").trim()

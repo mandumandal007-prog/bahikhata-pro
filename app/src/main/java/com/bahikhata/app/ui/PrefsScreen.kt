@@ -140,6 +140,10 @@ private fun TextRow(
 
 @Composable
 private fun KhataPrefs() {
+    SectionHeader("Home screen")
+    SwitchRow(0, 2, Icons.Filled.Today, Color(0xFF007AFF), "Aaj ka hisaab card", "Khata ke upar aaj ke Diye / Mile / Cash / Bikri", "home_today", true)
+    SwitchRow(1, 2, Icons.Filled.NotificationImportant, Color(0xFFFF9500), "Due nikal gayi wale log", "Home par late payment wale customers ki patti", "home_overdue", true)
+
     SectionHeader("Party list")
     ChoiceRow(0, 6, Icons.AutoMirrored.Filled.Sort, Color(0xFF007AFF), "Sort kaise karein", "sort_parties", "balance", listOf(
         "balance" to "Sabse zyada baaki", "name" to "Naam (A–Z)", "recent" to "Haal ki entry", "new" to "Naye pehle", "old" to "Purane pehle"))

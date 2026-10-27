@@ -39,21 +39,31 @@ import com.bahikhata.app.util.startOfMonth
 import java.util.Calendar
 import kotlin.math.abs
 import kotlin.math.pow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.bahikhata.app.util.shareFile
+import androidx.compose.ui.graphics.Color
 
 @Composable
-fun ReportsScreen() {
+fun ReportsScreen(nav: Nav) {
     val ctx = LocalContext.current
     val tick = Repo.tick
     var period by remember { mutableStateOf("Is mahine") }
     val now = System.currentTimeMillis()
+    var customFrom by remember { mutableStateOf(addDays(startOfDay(now), -29)) }
+    var customTo by remember { mutableStateOf(startOfDay(now)) }
     val (start, end) = when (period) {
         "Aaj" -> startOfDay(now) to addDays(startOfDay(now), 1)
         "7 din" -> addDays(startOfDay(now), -6) to addDays(startOfDay(now), 1)
         "Is mahine" -> startOfMonth(now) to addMonths(startOfMonth(now), 1)
         "Pichhla mahina" -> addMonths(startOfMonth(now), -1) to startOfMonth(now)
+        "Apni tareekh" -> startOfDay(minOf(customFrom, customTo)) to addDays(startOfDay(maxOf(customFrom, customTo)), 1)
         else -> 0L to Long.MAX_VALUE
     }
+    val periodLabel = if (period == "Apni tareekh") "${fmtDate(start)} – ${fmtDate(addDays(end, -1))}" else period
     val entries = remember(tick, start, end) { Repo.entriesBetween(start, end) }
+    val fullEntries = remember(tick, start, end) { Repo.entriesFull(start, end) }
     val cash = remember(tick, start, end) { Repo.cashList().filter { it.date >= start && it.date < end } }
     val bills = remember(tick, start, end) { Repo.invoices().filter { it.date >= start && it.date < end } }
     val parties = remember(tick) { Repo.parties() }
@@ -71,53 +81,155 @@ fun ReportsScreen() {
         .entries.sortedByDescending { it.value }
     val topDebtors = parties.filter { it.balance > 0 }.sortedByDescending { it.balance }.take(5)
     val lowStock = items.filter { it.qty <= it.lowStock }
+    val overdue = remember(tick, parties) { overdueList(parties) }
+    val ages = remember(tick, parties) { ageing(parties) }
 
-    // chart: last 7 days cash in/out
-    val days = (6 downTo 0).map { addDays(startOfDay(now), -it) }
-    val allCash = remember(tick) { Repo.cashList() }
-    val dayIn = days.map { d -> allCash.filter { it.cashIn && it.date >= d && it.date < addDays(d, 1) }.sumOf { it.amount } }
-    val dayOut = days.map { d -> allCash.filter { !it.cashIn && it.date >= d && it.date < addDays(d, 1) }.sumOf { it.amount } }
+    // collection insights: compare with the same-length window just before
+    val bounded = start > 0L && end != Long.MAX_VALUE
+    val prevGot = remember(tick, start, end) {
+        if (!bounded) null else {
+            val len = minOf(end, addDays(startOfDay(now), 1)) - start
+            Repo.entriesBetween(start - len, start).filter { !it.gave }.sumOf { it.amount }
+        }
+    }
+    val daysInWindow = if (bounded) (((minOf(end, addDays(startOfDay(now), 1)) - start) / 86_400_000L).toInt()).coerceAtLeast(1) else null
+    val bestDay = entries.filter { !it.gave }.groupBy { startOfDay(it.date) }.mapValues { it.value.sumOf { r -> r.amount } }.maxByOrNull { it.value }
+    val modeSplit = (fullEntries.filter { !it.gave }.map { it.mode to it.amount } + cash.filter { it.cashIn }.map { it.mode to it.amount })
+        .groupBy { it.first.uppercase() }.mapValues { e -> e.value.sumOf { it.second } }.entries.sortedByDescending { it.value }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        ChipsRow(listOf("Aaj", "7 din", "Is mahine", "Pichhla mahina", "Sab"), period, { period = it })
+    var trendSpan by remember { mutableStateOf("7 din") }
+    var trendSrc by remember { mutableStateOf("Khata") }
+    val trend = remember(tick, trendSpan, trendSrc) { trendData(trendSpan, trendSrc == "Khata") }
 
-        SectionCard("Udhaar khata ($period)") {
+    var bookDay by remember { mutableStateOf(startOfDay(now)) }
+    val book = remember(tick, bookDay) { dayBook(bookDay) }
+    var showAllOverdue by remember { mutableStateOf(false) }
+    var pdfBusy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        ChipsRow(listOf("Aaj", "7 din", "Is mahine", "Pichhla mahina", "Apni tareekh", "Sab"), period, { period = it })
+        if (period == "Apni tareekh") {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DateField("Se", customFrom, { it?.let { v -> customFrom = startOfDay(v) } }, Modifier.weight(1f))
+                DateField("Tak", customTo, { it?.let { v -> customTo = startOfDay(v) } }, Modifier.weight(1f))
+            }
+        }
+
+        SectionCard("Udhaar khata ($periodLabel)") {
             Row {
                 StatBox("Diye (Gave)", rupees(gave), GaveRed, Modifier.weight(1f))
                 StatBox("Mile (Got)", rupees(got), GotGreen, Modifier.weight(1f))
             }
             Text("${entries.size} entries", style = MaterialTheme.typography.bodySmall)
         }
-        SectionCard("Cashbook ($period)") {
+
+        // ---- trend chart
+        SectionCard("Len-den ka graph") {
+            IosSegmented(listOf("Khata", "Cashbook"), trendSrc, { trendSrc = it })
+            Spacer(Modifier.height(8.dp))
+            IosSegmented(listOf("7 din", "8 hafte", "6 mahine"), trendSpan, { trendSpan = it })
+            Spacer(Modifier.height(12.dp))
+            if (trendSrc == "Khata") TrendChart(trend, "Mile", "Diye") else TrendChart(trend, "Aaya", "Gaya")
+            Text("Bar par tap karke us din / hafte / mahine ka hisaab dekhein", fontSize = 11.sp, color = ios.tertiaryLabel, modifier = Modifier.padding(top = 4.dp))
+        }
+
+        // ---- collection insights
+        SectionCard("Vasooli insights ($periodLabel)") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Kul vasooli (Mile)", fontSize = 13.sp, color = ios.secondaryLabel)
+                    Text(amt(got), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = GotGreen)
+                }
+                if (prevGot != null && (prevGot > 0 || got > 0)) {
+                    val pct = if (prevGot > 0) ((got - prevGot) / prevGot * 100).toInt() else 100
+                    val up = got >= prevGot
+                    Text((if (up) "▲ " else "▼ ") + "${abs(pct)}%", fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                        color = if (up) GotGreen else GaveRed,
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background((if (up) GotGreen else GaveRed).copy(alpha = 0.12f)).padding(horizontal = 8.dp, vertical = 4.dp))
+                }
+            }
+            if (prevGot != null) Text("Pichhle utne hi samay me: ${amt(prevGot)}", fontSize = 12.sp, color = ios.secondaryLabel)
+            Spacer(Modifier.height(10.dp))
+            val rate = if (gave > 0) (got / gave * 100).toInt() else null
+            KeyValue("Vasooli rate (Mile ÷ Diye)", rate?.let { "$it%" } ?: "—", color = if ((rate ?: 0) >= 80) GotGreen else if (rate == null) Color.Unspecified else IosOrange)
+            if (daysInWindow != null) KeyValue("Roz ka ausat (Mile)", amt(got / daysInWindow))
+            bestDay?.let { KeyValue("Sabse achha din", "${fmtDate(it.key)} · ${amt(it.value)}") }
+            KeyValue("Payment karne wale log", entries.filter { !it.gave }.map { it.partyId }.distinct().size.toString())
+            if (modeSplit.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text("Paisa kaise aaya (khata + cashbook)", fontSize = 13.sp, color = ios.secondaryLabel)
+                Spacer(Modifier.height(6.dp))
+                StackedBar(modeSplit.map { Triple(it.key.lowercase().replaceFirstChar { c -> c.uppercase() }, it.value, MODE_COLORS[it.key] ?: Color(0xFF8E8E93)) })
+            }
+        }
+
+        // ---- overdue
+        if (overdue.isNotEmpty()) {
+            Column {
+                Text("DUE NIKAL GAYI · ${overdue.size} LOG · ${amt(overdue.sumOf { it.party.balance })}", Modifier.padding(start = 16.dp, bottom = 6.dp, top = 4.dp),
+                    fontSize = 13.sp, color = IosOrange, fontWeight = FontWeight.SemiBold)
+                val shownO = if (showAllOverdue) overdue else overdue.take(5)
+                shownO.forEachIndexed { i, o -> OverdueRow(o, i, shownO.size) { nav.go(Screen.PartyDetail(o.party.id)) } }
+                if (overdue.size > 5) TextButton(onClick = { showAllOverdue = !showAllOverdue }) {
+                    Text(if (showAllOverdue) "Kam dikhayein" else "Sab ${overdue.size} dikhayein")
+                }
+                Text("Hara button dabate hi WhatsApp par reminder chala jayega.", fontSize = 12.sp, color = ios.secondaryLabel, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
+            }
+        }
+
+        SectionCard("Kul baaki (abhi tak)") {
+            KeyValue("Aapko milenge", rupees(receivable), bold = true, color = GaveRed)
+            KeyValue("Aapko dene hain", rupees(payable), bold = true, color = GotGreen)
+            if (topDebtors.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text("Sabse zyada baaki", fontSize = 13.sp, color = ios.secondaryLabel)
+                Spacer(Modifier.height(4.dp))
+                topDebtors.forEachIndexed { i, p ->
+                    val share = if (receivable > 0) (p.balance / receivable).toFloat() else 0f
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { nav.go(Screen.PartyDetail(p.id)) }.padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("${i + 1}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = ios.secondaryLabel, modifier = Modifier.width(18.dp))
+                        InitialsAvatar(p.name, 30.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(p.name, fontSize = 15.sp, color = ios.label, maxLines = 1)
+                            Box(Modifier.padding(top = 4.dp).fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(ios.fill)) {
+                                Box(Modifier.fillMaxWidth(share.coerceIn(0.02f, 1f)).fillMaxHeight().background(GaveRed))
+                            }
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(amt(p.balance), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = GaveRed)
+                            Text("${(share * 100).toInt()}% of total", fontSize = 11.sp, color = ios.secondaryLabel)
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- ageing
+        if (receivable > 0) SectionCard("Baaki kitna purana hai") {
+            Text("Customer ne aakhri baar kab paise diye, us hisaab se", fontSize = 12.sp, color = ios.secondaryLabel)
+            Spacer(Modifier.height(10.dp))
+            StackedBar(ages.map { Triple("${it.label} · ${it.count} log", it.amount, it.color) })
+            if (ages[3].amount > 0) Text("90 din se purana baaki: in logon se jaldi baat karein.", fontSize = 12.sp, color = GaveRed, modifier = Modifier.padding(top = 6.dp))
+        }
+
+        SectionCard("Cashbook ($periodLabel)") {
             Row {
                 StatBox("Aaya", rupees(cIn), GotGreen, Modifier.weight(1f))
                 StatBox("Gaya", rupees(cOut), GaveRed, Modifier.weight(1f))
                 StatBox("Bacha", rupees(cIn - cOut), MaterialTheme.colorScheme.primary, Modifier.weight(1f))
             }
         }
-        SectionCard("Bills ($period)") {
+        SectionCard("Bills ($periodLabel)") {
             KeyValue("Kul bills", bills.size.toString())
             KeyValue("Kul bikri", rupees(billTotal), bold = true)
             KeyValue("Usme GST", rupees(billGst))
             KeyValue("Baaki (unpaid)", rupees(bills.filter { !it.paid }.sumOf { it.total }), color = GaveRed)
         }
-        SectionCard("Pichhle 7 din: cash aaya / gaya") {
-            BarChart(days.map { dayLabel(it) }, dayIn, dayOut)
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("■ Aaya", color = GotGreen, style = MaterialTheme.typography.labelMedium)
-                Text("■ Gaya", color = GaveRed, style = MaterialTheme.typography.labelMedium)
-            }
-        }
-        SectionCard("Kul baaki (abhi tak)") {
-            KeyValue("Aapko milenge", rupees(receivable), bold = true, color = GaveRed)
-            KeyValue("Aapko dene hain", rupees(payable), bold = true, color = GotGreen)
-            if (topDebtors.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Text("Sabse zyada baaki", fontSize = 13.sp, color = ios.secondaryLabel)
-                topDebtors.forEach { KeyValue(it.name, rupees(it.balance)) }
-            }
-        }
-        if (expenseByCat.isNotEmpty()) SectionCard("Kharch kahan hua ($period)") {
+        if (expenseByCat.isNotEmpty()) SectionCard("Kharch kahan hua ($periodLabel)") {
             val max = expenseByCat.maxOf { it.value }.coerceAtLeast(1.0)
             expenseByCat.forEach { (cat, v) ->
                 Text("$cat — ${rupees(v)}", style = MaterialTheme.typography.bodyMedium)
@@ -128,48 +240,75 @@ fun ReportsScreen() {
                 Spacer(Modifier.height(6.dp))
             }
         }
+
+        // ---- day book
+        SectionCard("Roznamcha (Day book)") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { bookDay = addDays(bookDay, -1) }) { Icon(Icons.Filled.ChevronLeft, "Pichhla din", tint = ios.tint) }
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(if (bookDay == startOfDay(now)) "Aaj" else if (bookDay == addDays(startOfDay(now), -1)) "Kal" else dayLabel(bookDay),
+                        fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = ios.label)
+                    Text(fmtDate(bookDay), fontSize = 12.sp, color = ios.secondaryLabel)
+                }
+                IconButton(onClick = { if (bookDay < startOfDay(now)) bookDay = addDays(bookDay, 1) }, enabled = bookDay < startOfDay(now)) {
+                    Icon(Icons.Filled.ChevronRight, "Agla din", tint = if (bookDay < startOfDay(now)) ios.tint else ios.tertiaryLabel)
+                }
+            }
+            val inSum = book.filter { it.inflow == true }.sumOf { it.amount }
+            val outSum = book.filter { it.inflow == false }.sumOf { it.amount }
+            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                StatBox("Aaya / Mile", rupees(inSum), GotGreen, Modifier.weight(1f))
+                StatBox("Gaya / Diye", rupees(outSum), GaveRed, Modifier.weight(1f))
+            }
+            if (book.isEmpty()) Text("Is din koi len-den nahi", fontSize = 14.sp, color = ios.secondaryLabel, modifier = Modifier.padding(vertical = 8.dp))
+            book.forEachIndexed { i, r ->
+                if (i > 0) Hairline()
+                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(r.title, fontSize = 15.sp, color = ios.label, maxLines = 1)
+                        Text(com.bahikhata.app.util.fmtDateTime(r.time).takeLast(8).trim() + " · " + r.sub, fontSize = 12.sp, color = ios.secondaryLabel, maxLines = 1)
+                    }
+                    Text(amt(r.amount), fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                        color = when (r.inflow) { true -> GotGreen; false -> GaveRed; null -> ios.label })
+                }
+            }
+        }
+
         SectionCard("Stock") {
             KeyValue("Items", items.size.toString())
             KeyValue("Stock value (kharid)", rupees(items.sumOf { it.qty * it.purchasePrice }))
             KeyValue("Kam stock items", lowStock.size.toString(), color = if (lowStock.isEmpty()) GotGreen else GaveRed)
             lowStock.take(5).forEach { Text("• ${it.name}: ${money(it.qty)} ${it.unit}", style = MaterialTheme.typography.bodySmall) }
         }
+
         Button(onClick = {
+            if (pdfBusy) return@Button
+            pdfBusy = true
+            scope.launch {
+                val f = withContext(Dispatchers.IO) {
+                    try { com.bahikhata.app.util.Pdf.report(ctx, periodLabel, start, if (end == Long.MAX_VALUE) addDays(startOfDay(now), 1) else end) } catch (e: Throwable) { null }
+                }
+                pdfBusy = false
+                if (f != null) shareFile(ctx, f, "application/pdf", "Report PDF bhejein")
+            }
+        }, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Filled.PictureAsPdf, null); Spacer(Modifier.width(8.dp)); Text(if (pdfBusy) "PDF ban raha hai…" else "Report PDF banayein / share karein")
+        }
+        OutlinedButton(onClick = {
             val text = buildString {
-                append("*${Repo.businessName()} — Report ($period)*\n")
+                append("*${Repo.businessName()} — Report ($periodLabel)*\n")
                 append("Khata: Diye ${rupees(gave)}, Mile ${rupees(got)}\n")
                 append("Cashbook: Aaya ${rupees(cIn)}, Gaya ${rupees(cOut)}, Bacha ${rupees(cIn - cOut)}\n")
                 append("Bills: ${bills.size}, Bikri ${rupees(billTotal)}\n")
                 append("Kul lena: ${rupees(receivable)}, Kul dena: ${rupees(payable)}\n")
+                if (overdue.isNotEmpty()) append("Due nikal gayi: ${overdue.size} log, ${rupees(overdue.sumOf { it.party.balance })}\n")
                 append("(${fmtDate(now)})")
             }
             shareText(ctx, text)
         }, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Filled.Share, null); Spacer(Modifier.width(8.dp)); Text("Report share karein")
+            Icon(Icons.Filled.Share, null); Spacer(Modifier.width(8.dp)); Text("Text me share karein")
         }
         Spacer(Modifier.height(16.dp))
-    }
-}
-
-@Composable
-fun BarChart(labels: List<String>, a: List<Double>, b: List<Double>) {
-    val max = (a + b).maxOrNull()?.takeIf { it > 0 } ?: 1.0
-    val gridColor = MaterialTheme.colorScheme.outlineVariant
-    Canvas(Modifier.fillMaxWidth().height(140.dp)) {
-        val n = labels.size
-        val slot = size.width / n
-        val bw = slot * 0.3f
-        drawLine(gridColor, Offset(0f, size.height), Offset(size.width, size.height), 2f)
-        for (i in 0 until n) {
-            val x = i * slot + slot * 0.15f
-            val ha = (a[i] / max * size.height * 0.95).toFloat()
-            val hb = (b[i] / max * size.height * 0.95).toFloat()
-            drawRoundRect(GotGreen, Offset(x, size.height - ha), Size(bw, ha), CornerRadius(6f, 6f))
-            drawRoundRect(GaveRed, Offset(x + bw + 4f, size.height - hb), Size(bw, hb), CornerRadius(6f, 6f))
-        }
-    }
-    Row(Modifier.fillMaxWidth()) {
-        labels.forEach { Text(it, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall) }
     }
 }
 

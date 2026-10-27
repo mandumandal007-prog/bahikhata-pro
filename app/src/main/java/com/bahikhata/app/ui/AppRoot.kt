@@ -211,7 +211,7 @@ fun TabsScaffold(nav: Nav) {
                 Tab.CASH -> CashbookScreen()
                 Tab.STOCK -> StockScreen()
                 Tab.BILL -> InvoiceListScreen(nav)
-                Tab.REPORTS -> ReportsScreen()
+                Tab.REPORTS -> ReportsScreen(nav)
             }
         }
     }

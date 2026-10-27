@@ -619,6 +619,45 @@ object Repo {
         }
     }
 
+
+    // ------------------------------------------------------------ dashboard (v1.0.40)
+
+    /** Oldest passed due date per party (only "Diye" entries with a due date before today). */
+    fun overdueSince(): Map<Long, Long> {
+        val m = HashMap<Long, Long>()
+        query(
+            "SELECT party_id, MIN(due_date) FROM entries WHERE gave=1 AND due_date IS NOT NULL AND due_date > 0 AND due_date < ? GROUP BY party_id",
+            arrayOf(startOfToday().toString())
+        ) { c -> m[c.getLong(0)] = c.getLong(1) }
+        return m
+    }
+
+    /** Latest "Mile" (payment received) date per party. */
+    fun lastPaymentDates(): Map<Long, Long> {
+        val m = HashMap<Long, Long>()
+        query("SELECT party_id, MAX(date) FROM entries WHERE gave=0 GROUP BY party_id") { c -> m[c.getLong(0)] = c.getLong(1) }
+        return m
+    }
+
+    /** Earliest entry date per party. */
+    fun firstEntryDates(): Map<Long, Long> {
+        val m = HashMap<Long, Long>()
+        query("SELECT party_id, MIN(date) FROM entries GROUP BY party_id") { c -> m[c.getLong(0)] = c.getLong(1) }
+        return m
+    }
+
+    /** Khata entries with their payment mode, in a time window (for mode split). */
+    fun entriesFull(start: Long, end: Long): List<Entry> = query(
+        "SELECT id,party_id,gave,amount,mode,note,date,due_date FROM entries WHERE date >= ? AND date < ? ORDER BY date DESC",
+        arrayOf(start.toString(), end.toString())
+    ) { c ->
+        Entry(
+            id = c.getLong(0), partyId = c.getLong(1), gave = c.getInt(2) == 1, amount = c.getDouble(3),
+            mode = c.getString(4) ?: "CASH", note = c.getString(5) ?: "", date = c.getLong(6),
+            dueDate = if (c.isNull(7)) null else c.getLong(7)
+        )
+    }
+
     fun wipeAll() {
         db.delete("parties", null, null)
         db.delete("entries", null, null)

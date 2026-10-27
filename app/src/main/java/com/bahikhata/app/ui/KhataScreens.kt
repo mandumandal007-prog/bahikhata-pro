@@ -77,6 +77,8 @@ fun KhataScreen(nav: Nav) {
     var query by remember { mutableStateOf("") }
     var adding by remember { mutableStateOf(false) }
     val sortBy = remember(tick) { S.sortParties }
+    val homeToday = remember(tick) { S.homeToday }
+    val homeOverdue = remember(tick) { S.homeOverdue }
     val rowOpts = remember(tick) { RowOpts(S.listPhone, S.listPhotos, S.listCompact, S.dueBadge) }
     val dueIds = remember(tick, rowOpts.dueBadge) { if (rowOpts.dueBadge) Repo.overdueParties() else emptySet() }
     val lastActivity = remember(tick, sortBy) { if (sortBy == "recent") Repo.lastEntryDates() else emptyMap() }
@@ -122,6 +124,14 @@ fun KhataScreen(nav: Nav) {
                         StatBox("Aapko milenge", rupees(willGet), GaveRed, Modifier.weight(1f))
                         StatBox("Aapko dene hain", rupees(willGive), GotGreen, Modifier.weight(1f))
                     }
+                }
+                if (homeToday && query.isBlank()) {
+                    Spacer(Modifier.height(12.dp))
+                    TodayCard { if (S.tabShown("REPORTS")) nav.tab = Tab.REPORTS }
+                }
+                if (homeOverdue && query.isBlank()) {
+                    Spacer(Modifier.height(12.dp))
+                    OverdueStrip(all) { nav.go(Screen.PartyDetail(it)) }
                 }
                 Spacer(Modifier.height(14.dp))
                 ChipsRow(listOf("Customers", "Suppliers", "Sab"), filter, { filter = it })
