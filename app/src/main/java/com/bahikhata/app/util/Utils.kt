@@ -31,8 +31,9 @@ private fun groupIndian(value: Long): String {
 fun money(n: Double): String {
     val neg = n < 0
     val a = abs(n)
-    val whole = a.toLong()
-    val paise = (a * 100).roundToInt() % 100
+    val cents = if (NumFmt.paise) Math.round(a * 100) else Math.round(a) * 100
+    val whole = cents / 100
+    val paise = (cents % 100).toInt()
     val g = if (NumFmt.indian) groupIndian(whole) else String.format(Locale.ENGLISH, "%,d", whole)
     val body = if (paise == 0) g else g + "." + paise.toString().padStart(2, '0')
     return (if (neg) "-" else "") + body
@@ -51,10 +52,10 @@ fun compactRupees(n: Double): String {
 }
 
 fun fmtDate(millis: Long): String =
-    SimpleDateFormat("dd MMM yyyy", Locale.ENGLISH).format(Date(millis))
+    SimpleDateFormat(NumFmt.datePattern, Locale.ENGLISH).format(Date(millis))
 
 fun fmtDateTime(millis: Long): String =
-    SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.ENGLISH).format(Date(millis))
+    SimpleDateFormat(NumFmt.datePattern + (if (NumFmt.time24) ", HH:mm" else ", hh:mm a"), Locale.ENGLISH).format(Date(millis))
 
 fun dayLabel(millis: Long): String =
     SimpleDateFormat("EE", Locale.ENGLISH).format(Date(millis))

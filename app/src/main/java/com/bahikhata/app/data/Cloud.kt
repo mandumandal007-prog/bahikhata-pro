@@ -41,7 +41,7 @@ object Cloud {
     private const val CHUNK = 400
     private val TABLES = listOf("parties", "entries", "cash", "items", "invoices", "settings")
     /** Settings that stay on this phone only. */
-    private val LOCAL_ONLY_SETTINGS = setOf("pin")
+    private val LOCAL_ONLY_SETTINGS = setOf("pin", "last_backup", "last_auto_backup")
 
     var configured = false
         private set

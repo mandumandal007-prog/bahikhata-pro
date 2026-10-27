@@ -9,9 +9,22 @@ import com.bahikhata.app.data.Entry
 import com.bahikhata.app.data.Invoice
 import com.bahikhata.app.data.Party
 import java.io.File
+import com.bahikhata.app.util.S
 import java.io.FileOutputStream
 
 object Pdf {
+
+    /** PDF colour theme (Settings → Bill & PDF): (main, accent). */
+    private fun themeColors(): Pair<Int, Int> = when (S.pdfTheme) {
+        "blue" -> AColor.parseColor("#0B2A4A") to AColor.parseColor("#2F80ED")
+        "green" -> AColor.parseColor("#0F3D2E") to AColor.parseColor("#2BAE66")
+        "maroon" -> AColor.parseColor("#4A0E1C") to AColor.parseColor("#C08A3E")
+        "black" -> AColor.parseColor("#111111") to AColor.parseColor("#8A8A8A")
+        else -> AColor.parseColor("#14213D") to AColor.parseColor("#C9A227")
+    }
+    private fun signatoryLabel() = S.pdfSignatory.ifEmpty { "Authorised Signatory" }
+    private fun footerLine() = S.pdfFooter.ifEmpty { "Thank you for your business!" }
+    private fun upiLine(): String? = S.upiId.takeIf { S.pdfUpi && it.isNotEmpty() }?.let { "UPI $it" }
 
     private const val PAGE_W = 595
     private const val PAGE_H = 842
@@ -38,8 +51,7 @@ object Pdf {
         shopName: String,
         shopPhone: String
     ): File {
-        val navy = AColor.parseColor("#14213D")
-        val gold = AColor.parseColor("#C9A227")
+        val (navy, gold) = themeColors()
         val soft = AColor.parseColor("#F7F3E8")
         val grayText = AColor.parseColor("#6B6B6B")
         val red = AColor.parseColor("#D7263D")
@@ -80,7 +92,7 @@ object Pdf {
         var hy = 70f
         val caps = p(8.5f, gold).apply { letterSpacing = 0.12f }
         if (address.isNotBlank()) { canvas.drawText(address.uppercase(), L, hy, caps); hy += 12f }
-        val contact = listOfNotNull(shopPhone.takeIf { it.isNotBlank() }?.let { "PH $it" }, gstin.takeIf { it.isNotBlank() }?.let { "GSTIN $it" }).joinToString("   ·   ")
+        val contact = listOfNotNull(shopPhone.takeIf { it.isNotBlank() }?.let { "PH $it" }, gstin.takeIf { it.isNotBlank() }?.let { "GSTIN $it" }, upiLine()).joinToString("   ·   ")
         if (contact.isNotBlank()) { canvas.drawText(contact.uppercase(), L, hy, caps) }
         canvas.drawText("STATEMENT OF ACCOUNT", Rt, 50f, p(11f, gold, bold = true, align = Paint.Align.RIGHT).apply { letterSpacing = 0.15f })
         canvas.drawText((firstDate?.let { fmtDate(it) + "  –  " } ?: "") + fmtDate(lastDate), Rt, 66f, p(9f, AColor.WHITE, align = Paint.Align.RIGHT))
@@ -92,7 +104,7 @@ object Pdf {
         canvas.drawRoundRect(android.graphics.RectF(L, cardTop, Rt, cardTop + 96f), 10f, 10f, fill)
         canvas.drawRoundRect(android.graphics.RectF(L, cardTop, Rt, cardTop + 96f), 10f, 10f, Paint().apply { color = gold; style = Paint.Style.STROKE; strokeWidth = 0.8f; isAntiAlias = true })
         val cx = L + 52f; val cy = cardTop + 48f; val rad = 32f
-        val photo = PartyPhotos.load(ctx, party.id)
+        val photo = if (S.pdfPhoto) PartyPhotos.load(ctx, party.id) else null
         if (photo != null) {
             val shader = android.graphics.BitmapShader(photo, android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP)
             val side = minOf(photo.width, photo.height).toFloat()
@@ -213,7 +225,7 @@ object Pdf {
         // signature
         val sy = maxOf(y + 40f, PAGE_H - 100f).coerceAtMost(PAGE_H - 52f)
         canvas.drawLine(Rt - 170f, sy, Rt, sy, Paint().apply { color = navy; strokeWidth = 0.8f })
-        canvas.drawText("Authorised Signatory", Rt - 85f, sy + 13f, p(9f, navy, align = Paint.Align.CENTER))
+        canvas.drawText(signatoryLabel(), Rt - 85f, sy + 13f, p(9f, navy, align = Paint.Align.CENTER))
         canvas.drawText("for $shopName", Rt - 85f, sy + 25f, p(8f, grayText, align = Paint.Align.CENTER))
         footer()
         doc.finishPage(page)
@@ -246,8 +258,7 @@ object Pdf {
             strokeWidth = 0.8f
         }
 
-        val navy = AColor.parseColor("#14213D")
-        val gold = AColor.parseColor("#C9A227")
+        val (navy, gold) = themeColors()
         canvas.drawRect(0f, 0f, PAGE_W.toFloat(), 14f, Paint().apply { color = navy })
         canvas.drawRect(0f, 14f, PAGE_W.toFloat(), 16.5f, Paint().apply { color = gold })
         title.typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
@@ -266,6 +277,10 @@ object Pdf {
         }
         if (shopGstin.isNotBlank()) {
             canvas.drawText("GSTIN: $shopGstin", MARGIN, y, small)
+            y += 12f
+        }
+        upiLine()?.let {
+            canvas.drawText("UPI: " + it.removePrefix("UPI "), MARGIN, y, small)
             y += 12f
         }
 
@@ -328,7 +343,7 @@ object Pdf {
         y += 20f
         canvas.drawText(if (inv.paid) "PAID" else "UNPAID", MARGIN, y, bold)
         y += 30f
-        canvas.drawText("Thank you for your business!", MARGIN, y, small)
+        canvas.drawText(footerLine(), MARGIN, y, small)
         val terms = com.bahikhata.app.data.Repo.setting("terms", "").trim()
         if (com.bahikhata.app.data.Repo.setting("terms_on", "1") == "1" && terms.isNotEmpty() && y < PAGE_H - 160f) {
             y += 26f
@@ -346,7 +361,7 @@ object Pdf {
         }
         val sy = PAGE_H - 70f
         canvas.drawLine(PAGE_W - MARGIN - 170f, sy, PAGE_W - MARGIN, sy, Paint().apply { color = navy; strokeWidth = 0.8f })
-        canvas.drawText("Authorised Signatory", PAGE_W - MARGIN - 140f, sy + 13f, small)
+        canvas.drawText(signatoryLabel(), PAGE_W - MARGIN - 140f, sy + 13f, small)
 
         doc.finishPage(page)
         val file = File(ctx.cacheDir, "invoice_${inv.number}_${System.currentTimeMillis()}.pdf")

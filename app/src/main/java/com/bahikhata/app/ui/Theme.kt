@@ -53,6 +53,7 @@ private fun iosTypography(ff: FontFamily): Typography {
 @Composable
 fun BahiTheme(content: @Composable () -> Unit) {
     @Suppress("UNUSED_VARIABLE") val t = Repo.tick
+    androidx.compose.runtime.remember(t) { com.bahikhata.app.util.S.refreshGlobals() }
     val mode = Repo.setting("theme", "system")
     val dark = when (mode) {
         "dark" -> true
@@ -93,6 +94,11 @@ fun BahiTheme(content: @Composable () -> Unit) {
             val ctrl = WindowCompat.getInsetsController(window, view)
             ctrl.isAppearanceLightStatusBars = !dark
             ctrl.isAppearanceLightNavigationBars = !dark
+            // Settings → Security: block screenshots / hide in recents, keep the screen on
+            val wf = android.view.WindowManager.LayoutParams.FLAG_SECURE
+            if (com.bahikhata.app.util.S.secureScreen) window.addFlags(wf) else window.clearFlags(wf)
+            val ko = android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+            if (com.bahikhata.app.util.S.keepScreenOn) window.addFlags(ko) else window.clearFlags(ko)
         }
     }
     val shapes = Shapes(

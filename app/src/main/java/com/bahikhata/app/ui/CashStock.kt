@@ -2,6 +2,8 @@
 
 package com.bahikhata.app.ui
 
+import com.bahikhata.app.util.S
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -118,7 +120,7 @@ fun CashDialog(cashIn: Boolean, onDismiss: () -> Unit) {
     var amount by remember { mutableStateOf("") }
     var cat by remember { mutableStateOf(if (cashIn) "Sale" else "Purchase") }
     var custom by remember { mutableStateOf("") }
-    var mode by remember { mutableStateOf("CASH") }
+    var mode by remember { mutableStateOf(S.cashMode.takeIf { it in PAY_MODES } ?: "CASH") }
     var note by remember { mutableStateOf("") }
     var date by remember { mutableStateOf(System.currentTimeMillis()) }
     var err by remember { mutableStateOf(false) }
@@ -168,7 +170,17 @@ fun StockScreen() {
     val low = items.filter { it.qty <= it.lowStock }
     val value = items.sumOf { it.qty * it.purchasePrice }
     val sellValue = items.sumOf { it.qty * it.sellPrice }
+    val stockSort = remember(tick) { S.stockSort }
+    val lowFirst = remember(tick) { S.lowFirst }
     val shown = items.filter { (query.isBlank() || it.name.contains(query, true)) && (!onlyLow || it.qty <= it.lowStock) }
+        .let { l ->
+            when (stockSort) {
+                "qty" -> l.sortedBy { it.qty }
+                "value" -> l.sortedByDescending { it.qty * it.purchasePrice }
+                else -> l
+            }
+        }
+        .let { l -> if (lowFirst) l.sortedByDescending { it.qty <= it.lowStock } else l }
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp)) {
@@ -245,11 +257,11 @@ fun StockScreen() {
 @Composable
 fun ItemDialog(existing: StockItem?, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf(existing?.name ?: "") }
-    var unit by remember { mutableStateOf(existing?.unit ?: "pcs") }
+    var unit by remember { mutableStateOf(existing?.unit ?: S.defUnit) }
     var qty by remember { mutableStateOf(existing?.qty?.plain() ?: "") }
     var buy by remember { mutableStateOf(existing?.purchasePrice?.plain() ?: "") }
     var sell by remember { mutableStateOf(existing?.sellPrice?.plain() ?: "") }
-    var low by remember { mutableStateOf(existing?.lowStock?.plain() ?: "5") }
+    var low by remember { mutableStateOf(existing?.lowStock?.plain() ?: S.defLow) }
     var err by remember { mutableStateOf(false) }
     var confirmDel by remember { mutableStateOf(false) }
     IosSheet(

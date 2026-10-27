@@ -54,4 +54,8 @@ object UiPrefs {
 object NumFmt {
     @Volatile var symbol: String = "₹"
     @Volatile var indian: Boolean = true
+    @Volatile var datePattern: String = "dd MMM yyyy"
+    @Volatile var time24: Boolean = false
+    /** false = amounts shown rounded to whole rupees (display only; saved values are unchanged). */
+    @Volatile var paise: Boolean = true
 }

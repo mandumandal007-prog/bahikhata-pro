@@ -124,6 +124,26 @@ object Repo {
         bump()
     }
 
+    /** Parties with a "Diye" entry whose due date has passed (for the list badge). */
+    fun overdueParties(): Set<Long> = query(
+        "SELECT DISTINCT party_id FROM entries WHERE gave=1 AND due_date IS NOT NULL AND due_date > 0 AND due_date < ?",
+        arrayOf(startOfToday().toString())
+    ) { it.getLong(0) }.toSet()
+
+    /** Latest entry date per party (for "recent activity" sorting). */
+    fun lastEntryDates(): Map<Long, Long> {
+        val m = HashMap<Long, Long>()
+        query("SELECT party_id, MAX(date) FROM entries GROUP BY party_id") { c -> m[c.getLong(0)] = c.getLong(1) }
+        return m
+    }
+
+    private fun startOfToday(): Long {
+        val c = java.util.Calendar.getInstance()
+        c.set(java.util.Calendar.HOUR_OF_DAY, 0); c.set(java.util.Calendar.MINUTE, 0)
+        c.set(java.util.Calendar.SECOND, 0); c.set(java.util.Calendar.MILLISECOND, 0)
+        return c.timeInMillis
+    }
+
     fun deleteParty(id: Long) {
         db.delete("entries", "party_id=?", arrayOf(id.toString()))
         db.delete("parties", "id=?", arrayOf(id.toString()))
@@ -382,7 +402,8 @@ object Repo {
         val count = query("SELECT COUNT(*) FROM invoices") { it.getInt(0) }.firstOrNull() ?: 0
         val maxId = query("SELECT IFNULL(MAX(id),0) FROM invoices") { it.getLong(0) }.firstOrNull() ?: 0L
         val n = maxOf(count.toLong(), maxId) + 1
-        return "INV-${n.toString().padStart(4, '0')}"
+        val prefix = setting("invoice_prefix", "INV-")
+        return prefix + n.toString().padStart(4, '0')
     }
 
     // -------------------------------------------------------- backup / restore

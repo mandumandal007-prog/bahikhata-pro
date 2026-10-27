@@ -29,6 +29,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bahikhata.app.data.Cloud
+import com.bahikhata.app.util.S
+import androidx.compose.ui.platform.LocalContext
+import android.os.Build
 import com.bahikhata.app.data.Repo
 import kotlinx.coroutines.launch
 
@@ -257,6 +260,10 @@ fun PinScreen(pin: String, onUnlock: () -> Unit) {
     var error by remember { mutableStateOf(false) }
     var forgot by remember { mutableStateOf(false) }
 
+    val act = LocalContext.current as? android.app.Activity
+    val bio = remember { S.biometric && Build.VERSION.SDK_INT >= 28 }
+    LaunchedEffect(Unit) { if (bio && act != null) biometricUnlock(act) { onUnlock() } }
+
     fun press(d: String) {
         if (entered.length >= pin.length) return
         entered += d
@@ -303,6 +310,9 @@ fun PinScreen(pin: String, onUnlock: () -> Unit) {
                 }
                 Spacer(Modifier.height(14.dp))
             }
+            if (bio && act != null) TextButton(onClick = { biometricUnlock(act) { onUnlock() } }) {
+                Icon(Icons.Filled.Fingerprint, null); Spacer(Modifier.width(6.dp)); Text("Finger / face se kholein")
+            }
             TextButton(onClick = { forgot = true }) { Text("PIN bhool gaye?") }
         }
     }
@@ -339,4 +349,22 @@ fun PinScreen(pin: String, onUnlock: () -> Unit) {
             dismissButton = { TextButton(onClick = { forgot = false }) { Text("Band karein") } }
         )
     }
+}
+
+
+/** System fingerprint / face prompt (Android 9+). Calls onOk only on success; otherwise the PIN pad stays. */
+fun biometricUnlock(activity: android.app.Activity, onOk: () -> Unit) {
+    if (Build.VERSION.SDK_INT < 28) return
+    try {
+        val ex = activity.mainExecutor
+        val prompt = android.hardware.biometrics.BiometricPrompt.Builder(activity)
+            .setTitle("BahiKhata kholein")
+            .setSubtitle("Finger ya face se unlock")
+            .setNegativeButton("PIN daalein", ex) { _, _ -> }
+            .build()
+        prompt.authenticate(android.os.CancellationSignal(), ex,
+            object : android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: android.hardware.biometrics.BiometricPrompt.AuthenticationResult?) { onOk() }
+            })
+    } catch (_: Throwable) {}
 }

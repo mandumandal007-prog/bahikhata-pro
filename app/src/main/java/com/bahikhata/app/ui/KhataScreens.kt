@@ -19,6 +19,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.bahikhata.app.util.PartyPhotos
+import com.bahikhata.app.util.S
+import com.bahikhata.app.util.addDays
+import com.bahikhata.app.data.Cloud
 import com.bahikhata.app.util.smsTo
 import com.bahikhata.app.util.whatsappFile
 import java.io.File
@@ -70,20 +73,48 @@ private fun balanceColor(b: Double) = when {
 fun KhataScreen(nav: Nav) {
     val tick = Repo.tick
     val all = remember(tick) { Repo.parties() }
-    var filter by remember { mutableStateOf("Customers") }
+    var filter by remember { mutableStateOf(S.khataFilter.takeIf { it in listOf("Customers", "Suppliers", "Sab") } ?: "Customers") }
     var query by remember { mutableStateOf("") }
     var adding by remember { mutableStateOf(false) }
+    val sortBy = remember(tick) { S.sortParties }
+    val rowOpts = remember(tick) { RowOpts(S.listPhone, S.listPhotos, S.listCompact, S.dueBadge) }
+    val dueIds = remember(tick, rowOpts.dueBadge) { if (rowOpts.dueBadge) Repo.overdueParties() else emptySet() }
+    val lastActivity = remember(tick, sortBy) { if (sortBy == "recent") Repo.lastEntryDates() else emptyMap() }
+    val showNudge = remember(tick) {
+        S.backupNudge && Cloud.uid == null && all.isNotEmpty() &&
+            System.currentTimeMillis() - maxOf(S.lastBackup, all.minOf { it.createdAt }) > 7L * 86_400_000L
+    }
 
     val willGet = all.filter { it.balance > 0 }.sumOf { it.balance }
     val willGive = all.filter { it.balance < 0 }.sumOf { -it.balance }
     val shown = all.filter {
         (filter == "Sab" || (filter == "Customers" && it.type == "CUSTOMER") || (filter == "Suppliers" && it.type == "SUPPLIER")) &&
             (query.isBlank() || it.name.contains(query, true) || it.phone.contains(query))
-    }.sortedByDescending { abs(it.balance) }
+    }.let { l ->
+        when (sortBy) {
+            "name" -> l.sortedBy { it.name.lowercase() }
+            "new" -> l.sortedByDescending { it.createdAt }
+            "old" -> l.sortedBy { it.createdAt }
+            "recent" -> l.sortedByDescending { lastActivity[it.id] ?: it.createdAt }
+            else -> l.sortedByDescending { abs(it.balance) }
+        }
+    }
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp)) {
             item {
+                if (showNudge) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(12.dp))
+                            .background(IosOrange.copy(alpha = 0.14f)).clickable { nav.go(Screen.Settings) }.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Outlined.Backup, null, tint = IosOrange)
+                        Spacer(Modifier.width(10.dp))
+                        Text("7 din se backup nahi liya. Tap karke backup lein ya cloud login karein.", fontSize = 14.sp, color = ios.label, modifier = Modifier.weight(1f))
+                        Chevron()
+                    }
+                }
                 IosSearchField(query, { query = it }, "Naam ya phone se dhoondhein")
                 Spacer(Modifier.height(12.dp))
                 SectionCard {
@@ -100,7 +131,7 @@ fun KhataScreen(nav: Nav) {
                 EmptyState(Icons.Outlined.People, if (all.isEmpty()) "Pehla customer jodein — neeche + dabayein" else "Koi nahi mila")
             }
             itemsIndexed(shown, key = { _, p -> p.id }) { i, p ->
-                PartyRow(p, i, shown.size) { nav.go(Screen.PartyDetail(p.id)) }
+                PartyRow(p, i, shown.size, rowOpts, p.id in dueIds) { nav.go(Screen.PartyDetail(p.id)) }
             }
         }
         ExtendedFloatingActionButton(
@@ -118,21 +149,27 @@ fun KhataScreen(nav: Nav) {
     }
 }
 
+/** Party list look (Settings → Khata). */
+private data class RowOpts(val phone: Boolean, val photos: Boolean, val compact: Boolean, val dueBadge: Boolean)
+
 @Composable
-private fun PartyRow(p: Party, index: Int, count: Int, onClick: () -> Unit) {
-    GroupCell(index, count, onClick = onClick, separatorInset = 68.dp, padding = PaddingValues(start = 12.dp, end = 8.dp, top = 9.dp, bottom = 9.dp)) {
-        PartyAvatar(p.id, p.name, 42.dp)
+private fun PartyRow(p: Party, index: Int, count: Int, o: RowOpts, overdue: Boolean, onClick: () -> Unit) {
+    val av = if (o.compact) 34.dp else 42.dp
+    val vpad = if (o.compact) 5.dp else 9.dp
+    GroupCell(index, count, onClick = onClick, separatorInset = if (o.compact) 58.dp else 68.dp, padding = PaddingValues(start = 12.dp, end = 8.dp, top = vpad, bottom = vpad)) {
+        if (o.photos) PartyAvatar(p.id, p.name, av) else InitialsAvatar(p.name, av)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(p.name, fontSize = 17.sp, fontWeight = FontWeight.Medium, color = ios.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(
-                (if (p.type == "SUPPLIER") "Supplier" else "Customer") + (if (p.phone.isNotBlank()) " · ${p.phone}" else ""),
-                fontSize = 14.sp, color = ios.secondaryLabel, maxLines = 1
+            Text(p.name, fontSize = if (o.compact) 16.sp else 17.sp, fontWeight = FontWeight.Medium, color = ios.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (!o.compact || o.phone) Text(
+                (if (p.type == "SUPPLIER") "Supplier" else "Customer") + (if (o.phone && p.phone.isNotBlank()) " · ${p.phone}" else ""),
+                fontSize = if (o.compact) 12.sp else 14.sp, color = ios.secondaryLabel, maxLines = 1
             )
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(rupees(abs(p.balance)), color = balanceColor(p.balance), fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-            Text(balanceLabel(p.balance), fontSize = 12.sp, color = balanceColor(p.balance))
+            if (overdue && p.balance > 0.005) Text("Due nikal gayi", fontSize = 11.sp, color = IosOrange, fontWeight = FontWeight.SemiBold)
+            else Text(balanceLabel(p.balance), fontSize = 12.sp, color = balanceColor(p.balance))
         }
         Chevron()
     }
@@ -263,6 +300,8 @@ fun PartyScreen(id: Long, nav: Nav) {
         return
     }
     val entries = remember(tick) { Repo.entriesOf(id) }
+    val showRunning = remember(tick) { S.runningBal }
+    val askDelete = remember(tick) { S.confirmDelete }
     // running balance (oldest -> newest), shown newest first
     val running = remember(entries, party.opening) {
         var b = party.opening
@@ -284,7 +323,7 @@ fun PartyScreen(id: Long, nav: Nav) {
         shareFile(ctx, statementFile(), "application/pdf", "Statement share karein")
     }
     fun summary(): String = if (party.balance > 0)
-        "Namaste ${party.name} ji, $shop me aapka ${rupees(party.balance)} baaki hai. Kripya jald bhugtan karein. Dhanyavaad 🙏"
+        S.reminderText(party.name, rupees(party.balance), shop, true)
     else "Namaste ${party.name} ji, $shop ke saath aapka hisaab: ${balanceLabel(party.balance)} ${rupees(abs(party.balance))}. Dhanyavaad 🙏"
 
     Scaffold(
@@ -343,7 +382,7 @@ fun PartyScreen(id: Long, nav: Nav) {
                 GroupCell(i, running.size, onClick = { editEntry = e }) {
                     Column(Modifier.weight(1.4f)) {
                         Text(fmtDate(e.date), fontSize = 15.sp, color = ios.label)
-                        Text("Bal. ${rupees(abs(bal))}", fontSize = 12.sp, color = balanceColor(bal))
+                        if (showRunning) Text("Bal. ${rupees(abs(bal))}", fontSize = 12.sp, color = balanceColor(bal))
                         if (e.note.isNotBlank()) Text(e.note, fontSize = 13.sp, color = ios.secondaryLabel, maxLines = 2)
                         Text(e.mode + (e.dueDate?.let { " · Due ${fmtDate(it)}" } ?: ""), fontSize = 12.sp, color = ios.secondaryLabel)
                     }
@@ -384,7 +423,7 @@ fun PartyScreen(id: Long, nav: Nav) {
     }
     editEntry?.let { e ->
         EntryDialog(party.name, e.gave, e, onDismiss = { editEntry = null },
-            onDelete = { Repo.deleteEntry(e.id); editEntry = null }) { g, amt, mode, note, date, due ->
+            onDelete = { Repo.deleteEntry(e.id); editEntry = null }, confirmDelete = askDelete) { g, amt, mode, note, date, due ->
             Repo.updateEntry(e.id, g, amt, mode, note, date, due)
             editEntry = null
         }
@@ -406,14 +445,17 @@ fun EntryDialog(
     existing: Entry?,
     onDismiss: () -> Unit,
     onDelete: (() -> Unit)? = null,
+    confirmDelete: Boolean = true,
     onSave: (gave: Boolean, amount: Double, mode: String, note: String, date: Long, due: Long?) -> Unit
 ) {
     var isGave by remember { mutableStateOf(existing?.gave ?: gave) }
     var amount by remember { mutableStateOf(existing?.amount?.plain() ?: "") }
-    var mode by remember { mutableStateOf(existing?.mode ?: "CASH") }
+    var mode by remember { mutableStateOf(existing?.mode ?: S.defMode.takeIf { it in PAY_MODES } ?: "CASH") }
     var note by remember { mutableStateOf(existing?.note ?: "") }
     var date by remember { mutableStateOf(existing?.date ?: System.currentTimeMillis()) }
-    var due by remember { mutableStateOf(existing?.dueDate) }
+    var due by remember {
+        mutableStateOf(existing?.dueDate ?: S.defDueDays.takeIf { existing == null && it > 0 }?.let { addDays(System.currentTimeMillis(), it) })
+    }
     var err by remember { mutableStateOf(false) }
     var confirmDel by remember { mutableStateOf(false) }
     val color = if (isGave) GaveRed else GotGreen
@@ -433,7 +475,7 @@ fun EntryDialog(
                 if (isGave) DateField("Wapas kab milega (due date)", due, { due = it }, clearable = true)
                 if (onDelete != null) {
                     Spacer(Modifier.height(8.dp))
-                    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(ios.sheetCell).clickable { confirmDel = true }
+                    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(ios.sheetCell).clickable { if (confirmDelete) confirmDel = true else onDelete() }
                         .padding(13.dp), contentAlignment = Alignment.Center) { Text("Entry delete karein", color = IosRed, fontSize = 17.sp) }
                 }
             }

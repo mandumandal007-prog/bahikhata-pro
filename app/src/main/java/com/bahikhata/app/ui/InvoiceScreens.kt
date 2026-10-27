@@ -2,6 +2,8 @@
 
 package com.bahikhata.app.ui
 
+import com.bahikhata.app.util.S
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.outlined.PersonSearch
@@ -159,11 +161,11 @@ fun InvoiceCreateScreen(nav: Nav) {
     var phone by remember { mutableStateOf("") }
     var partyId by remember { mutableStateOf<Long?>(null) }
     val lines = remember { mutableStateListOf<LineDraft>() }
-    var gst by remember { mutableStateOf("0") }
+    var gst by remember { mutableStateOf(S.defGst) }
     var discount by remember { mutableStateOf("") }
-    var paid by remember { mutableStateOf(true) }
-    var reduceStock by remember { mutableStateOf(true) }
-    var toBooks by remember { mutableStateOf(true) }
+    var paid by remember { mutableStateOf(S.billPaid) }
+    var reduceStock by remember { mutableStateOf(S.billReduceStock) }
+    var toBooks by remember { mutableStateOf(S.billToBooks) }
     var pickParty by remember { mutableStateOf(false) }
     var lineDialog by remember { mutableStateOf<Int?>(null) } // -1 = new
     var saved by remember { mutableStateOf<Invoice?>(null) }

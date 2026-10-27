@@ -16,6 +16,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import com.bahikhata.app.util.UiPrefs
+import com.bahikhata.app.util.S
 import com.bahikhata.app.util.rupees
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -76,6 +77,7 @@ fun SettingsScreen(nav: Nav) {
             val ok = withContext(Dispatchers.IO) {
                 try {
                     ctx.contentResolver.openOutputStream(uri)?.use { it.write(PartyPhotos.exportWithPhotos(ctx, Repo.exportJson()).toString(2).toByteArray()) }
+                    S.markBackedUp()
                     true
                 } catch (e: Exception) { false }
             }
@@ -183,6 +185,18 @@ fun SettingsScreen(nav: Nav) {
             SectionFooter("Party statement aur bill PDF ke neeche chhapenge. Backup me bhi jaate hain.")
 
             // ---- appearance
+            SectionHeader("Aur settings")
+            PREF_GROUPS.forEachIndexed { i, g ->
+                GroupCell(i, PREF_GROUPS.size, onClick = { nav.go(Screen.Prefs(g.key)) }, separatorInset = 57.dp) {
+                    IconTile(g.icon, g.color); Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(g.title, fontSize = 17.sp, color = ios.label)
+                        Text(g.sub, fontSize = 12.sp, color = ios.secondaryLabel, maxLines = 1)
+                    }
+                    Chevron()
+                }
+            }
+
             SectionHeader("Dikhawat")
             SectionCard {
                 Text("Theme", fontSize = 13.sp, color = ios.secondaryLabel); Spacer(Modifier.height(6.dp))
@@ -277,6 +291,7 @@ fun SettingsScreen(nav: Nav) {
                                 writeText(PartyPhotos.exportWithPhotos(ctx, json).toString(2))
                             }
                         }
+                        S.markBackedUp()
                         shareFile(ctx, f, "application/json", "Backup bhejein")
                     } catch (e: Exception) { toast("Backup nahi bana") }
                 }
@@ -298,7 +313,7 @@ fun SettingsScreen(nav: Nav) {
                 }
                 Chevron()
             }
-            SectionFooter("Party photos sirf is phone me rehti hain (backup/cloud me nahi jaati).")
+            SectionFooter("Party photos bhi backup file aur cloud (login ho to) me jaati hain.")
 
             Spacer(Modifier.height(24.dp))
             GroupCell(0, 1, onClick = { wipe = true }) {
