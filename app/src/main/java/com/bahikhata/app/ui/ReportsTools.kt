@@ -65,7 +65,7 @@ fun ReportsScreen(nav: Nav) {
     val entries = remember(tick, start, end) { Repo.entriesBetween(start, end) }
     val fullEntries = remember(tick, start, end) { Repo.entriesFull(start, end) }
     val cash = remember(tick, start, end) { Repo.cashList().filter { it.date >= start && it.date < end } }
-    val bills = remember(tick, start, end) { Repo.invoices().filter { it.date >= start && it.date < end } }
+    val bills = remember(tick, start, end) { Repo.bills().filter { it.date >= start && it.date < end } }
     val parties = remember(tick) { Repo.parties() }
     val items = remember(tick) { Repo.items() }
 

@@ -1,5 +1,7 @@
 package com.bahikhata.app.util
 
+import com.bahikhata.app.data.balanceDue
+import com.bahikhata.app.data.paidAmount
 import android.content.Context
 import android.graphics.Color as AColor
 import android.graphics.Paint
@@ -449,7 +451,7 @@ object Pdf {
             y += 12f
         }
 
-        canvas.drawText("TAX INVOICE", PAGE_W - MARGIN - 90f, MARGIN + 12f, bold)
+        canvas.drawText(if (inv.isQuote) "QUOTATION" else if (inv.gstPercent > 0) "TAX INVOICE" else "BILL", PAGE_W - MARGIN - 90f, MARGIN + 12f, bold)
         canvas.drawText(inv.number, PAGE_W - MARGIN - 90f, MARGIN + 28f, body)
 
         y += 10f
@@ -471,7 +473,8 @@ object Pdf {
         canvas.drawText("#", MARGIN, y, bold)
         canvas.drawText("Item", MARGIN + 25f, y, bold)
         canvas.drawText("Qty", MARGIN + 250f, y, bold)
-        canvas.drawText("Rate", MARGIN + 320f, y, bold)
+        canvas.drawText("Rate", MARGIN + 300f, y, bold)
+        if (inv.lines.any { it.disc > 0 }) canvas.drawText("Disc", MARGIN + 360f, y, bold)
         canvas.drawText("Amount", MARGIN + 410f, y, bold)
         y += 6f
         line(canvas, y, rule)
@@ -481,8 +484,9 @@ object Pdf {
             canvas.drawText((i + 1).toString(), MARGIN, y, body)
             canvas.drawText(l.name.take(32), MARGIN + 25f, y, body)
             canvas.drawText(money(l.qty), MARGIN + 250f, y, body)
-            canvas.drawText(money(l.rate), MARGIN + 320f, y, body)
-            canvas.drawText(money(l.qty * l.rate), MARGIN + 410f, y, body)
+            canvas.drawText(money(l.rate), MARGIN + 300f, y, body)
+            if (l.disc > 0) canvas.drawText(money(l.disc) + "%", MARGIN + 360f, y, body)
+            canvas.drawText(money(l.amount), MARGIN + 410f, y, body)
             y += 16f
         }
 
@@ -505,8 +509,39 @@ object Pdf {
         y += 20f
         row("TOTAL", "Rs " + money(inv.total), true)
 
+        if (!inv.isQuote && inv.paidAmount > 0 && !inv.paid) {
+            row("Received (${inv.payMode})", money(inv.paidAmount))
+            row("BALANCE DUE", "Rs " + money(inv.balanceDue), true)
+        }
+        val qrTop = y
         y += 20f
-        canvas.drawText(if (inv.paid) "PAID" else "UNPAID", MARGIN, y, bold)
+        val status = when {
+            inv.isQuote -> "ESTIMATE - valid for 15 days" + if (inv.convertedTo.isNotBlank()) " (billed as ${inv.convertedTo})" else ""
+            inv.paid -> "PAID (${inv.payMode})"
+            inv.paidAmount > 0 -> "PARTLY PAID - balance Rs ${money(inv.balanceDue)}"
+            else -> "UNPAID"
+        }
+        canvas.drawText(status, MARGIN, y, bold)
+        if (inv.note.isNotBlank()) {
+            y += 16f
+            canvas.drawText("Note: " + inv.note.take(90), MARGIN, y, small)
+        }
+        // UPI QR: customer scans and pays the amount due
+        val upiId = com.bahikhata.app.data.Repo.setting("upi_id", "").trim()
+        if (!inv.isQuote && !inv.paid && upiId.contains("@") && com.bahikhata.app.data.Repo.setting("bill_qr", "1") == "1") {
+            val due = inv.balanceDue
+            val uri = "upi://pay?pa=" + android.net.Uri.encode(upiId) + "&pn=" + android.net.Uri.encode(shopName.take(40)) +
+                "&am=" + String.format(java.util.Locale.US, "%.2f", due) + "&cu=INR&tn=" + android.net.Uri.encode("Bill " + inv.number)
+            com.bahikhata.app.util.Qr.bitmap(uri, 240)?.let { bmp ->
+                val size = 96f
+                val left = MARGIN
+                val top = maxOf(qrTop - 4f, y + 10f)
+                canvas.drawBitmap(bmp, null, android.graphics.RectF(left, top, left + size, top + size), null)
+                canvas.drawText("Scan & pay Rs ${money(due)}", left + size + 10f, top + 40f, bold)
+                canvas.drawText("UPI: $upiId", left + size + 10f, top + 56f, small)
+                y = top + size
+            }
+        }
         y += 30f
         canvas.drawText(footerLine(), MARGIN, y, small)
         val terms = com.bahikhata.app.data.Repo.setting("terms", "").trim()

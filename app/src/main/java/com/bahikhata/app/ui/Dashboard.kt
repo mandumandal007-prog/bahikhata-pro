@@ -101,7 +101,7 @@ fun TodayCard(onOpenReports: () -> Unit) {
     val data = remember(tick, s) {
         val en = Repo.entriesBetween(s, e)
         val cash = Repo.cashList().filter { it.date >= s && it.date < e }
-        val bills = Repo.invoices().filter { it.date >= s && it.date < e }
+        val bills = Repo.bills().filter { it.date >= s && it.date < e }
         val yGot = Repo.entriesBetween(ys, s).filter { !it.gave }.sumOf { it.amount }
         doubleArrayOf(
             en.filter { it.gave }.sumOf { it.amount }, en.filter { !it.gave }.sumOf { it.amount },
@@ -341,7 +341,7 @@ fun dayBook(day: Long): List<DayRow> {
     Repo.cashList().filter { it.date >= day && it.date < e }.forEach { c ->
         rows += DayRow(c.date, c.category.ifBlank { "Cash" }, (if (c.cashIn) "Cashbook · Aaya" else "Cashbook · Gaya") + " · " + c.mode + (if (c.note.isNotBlank()) " · " + c.note else ""), c.amount, c.cashIn)
     }
-    Repo.invoices().filter { it.date >= day && it.date < e }.forEach { b ->
+    Repo.bills().filter { it.date >= day && it.date < e }.forEach { b ->
         rows += DayRow(b.date, "Bill ${b.number} · ${b.partyName}", if (b.paid) "Bill · Paid" else "Bill · Baaki", b.total, null)
     }
     return rows.sortedByDescending { it.time }

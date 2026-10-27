@@ -315,6 +315,9 @@ object Repo {
         "SELECT id,number,party_name,phone,date,lines,gst,discount,paid FROM invoices ORDER BY date DESC, id DESC"
     ) { c -> readInvoice(c) }
 
+    /** Real bills only (quotations are not sales). */
+    fun bills(): List<Invoice> = invoices().filter { !it.isQuote }
+
     fun invoice(id: Long): Invoice? = query(
         "SELECT id,number,party_name,phone,date,lines,gst,discount,paid FROM invoices WHERE id=?",
         arrayOf(id.toString())
@@ -323,20 +326,24 @@ object Repo {
     private fun readInvoice(c: Cursor): Invoice {
         val raw = c.getString(5) ?: "[]"
         val lines = ArrayList<InvoiceLine>()
+        var meta: JSONObject? = null
         try {
             val arr = JSONArray(raw)
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
+                if (o.has("_meta")) { meta = o.optJSONObject("_meta"); continue }
                 lines.add(
                     InvoiceLine(
                         name = o.optString("name"),
                         qty = o.optDouble("qty", 0.0),
-                        rate = o.optDouble("rate", 0.0)
+                        rate = o.optDouble("rate", 0.0),
+                        disc = o.optDouble("disc", 0.0).let { if (it.isNaN()) 0.0 else it }
                     )
                 )
             }
         } catch (_: Exception) {
         }
+        val m = meta
         return Invoice(
             id = c.getLong(0),
             number = c.getString(1) ?: "",
@@ -346,25 +353,45 @@ object Repo {
             lines = lines,
             gstPercent = c.getDouble(6),
             discount = c.getDouble(7),
-            paid = c.getInt(8) == 1
+            paid = c.getInt(8) == 1,
+            type = m?.optString("type", "BILL")?.ifBlank { "BILL" } ?: "BILL",
+            received = m?.optDouble("received", 0.0)?.let { if (it.isNaN()) 0.0 else it } ?: 0.0,
+            payMode = m?.optString("mode", "CASH")?.ifBlank { "CASH" } ?: "CASH",
+            note = m?.optString("note", "") ?: "",
+            convertedTo = m?.optString("conv", "") ?: ""
         )
     }
 
-    fun addInvoice(inv: Invoice): Long {
+    /** Lines + extra bill fields as one JSON array; extras ride in a trailing {"_meta":{...}} item. */
+    private fun linesJson(inv: Invoice): String {
         val arr = JSONArray()
         inv.lines.forEach { l ->
             arr.put(JSONObject().apply {
                 put("name", l.name)
                 put("qty", l.qty)
                 put("rate", l.rate)
+                if (l.disc > 0) put("disc", l.disc)
             })
         }
+        if (inv.type != "BILL" || inv.received > 0 || inv.payMode != "CASH" || inv.note.isNotBlank() || inv.convertedTo.isNotBlank()) {
+            arr.put(JSONObject().put("_meta", JSONObject().apply {
+                put("type", inv.type)
+                put("received", inv.received)
+                put("mode", inv.payMode)
+                if (inv.note.isNotBlank()) put("note", inv.note)
+                if (inv.convertedTo.isNotBlank()) put("conv", inv.convertedTo)
+            }))
+        }
+        return arr.toString()
+    }
+
+    fun addInvoice(inv: Invoice): Long {
         val cv = ContentValues().apply {
             put("number", inv.number)
             put("party_name", inv.partyName)
             put("phone", inv.phone)
             put("date", inv.date)
-            put("lines", arr.toString())
+            put("lines", linesJson(inv))
             put("gst", inv.gstPercent)
             put("discount", inv.discount)
             put("paid", if (inv.paid) 1 else 0)
@@ -374,7 +401,47 @@ object Repo {
         return id
     }
 
+    /** Rewrites the extra fields (payment, type, note) of an existing bill. */
+    fun updateInvoiceMeta(inv: Invoice) {
+        val cv = ContentValues().apply {
+            put("lines", linesJson(inv))
+            put("paid", if (inv.paid) 1 else 0)
+        }
+        db.update("invoices", cv, "id=?", arrayOf(inv.id.toString()))
+        bump()
+    }
+
+    /** Adds a payment to a bill; marks it paid when fully received. Returns the updated bill. */
+    fun addInvoicePayment(id: Long, amount: Double, mode: String): Invoice? {
+        val inv = invoice(id) ?: return null
+        val got = (inv.received + amount).coerceAtMost(inv.total)
+        val up = inv.copy(received = got, payMode = mode, paid = got >= inv.total - 0.005)
+        updateInvoiceMeta(up)
+        return up
+    }
+
+    /** Recently billed items with their last rate, newest first (a free "catalog"). */
+    fun recentBillItems(limit: Int = 12): List<InvoiceLine> {
+        val seen = LinkedHashMap<String, InvoiceLine>()
+        for (inv in invoices()) for (l in inv.lines) {
+            val k = l.name.trim().lowercase()
+            if (k.isNotEmpty() && k !in seen) seen[k] = l.copy(qty = 1.0)
+            if (seen.size >= limit) return seen.values.toList()
+        }
+        return seen.values.toList()
+    }
+
+    fun nextQuoteNumber(): String {
+        val n = invoices().count { it.isQuote } + 1
+        return "QT-" + n.toString().padStart(4, '0')
+    }
+
     fun setInvoicePaid(id: Long, paid: Boolean) {
+        val inv = invoice(id)
+        if (inv != null && (inv.received > 0 || inv.type != "BILL")) {
+            updateInvoiceMeta(inv.copy(paid = paid, received = if (paid) inv.total else 0.0))
+            return
+        }
         val cv = ContentValues().apply { put("paid", if (paid) 1 else 0) }
         db.update("invoices", cv, "id=?", arrayOf(id.toString()))
         bump()
@@ -473,14 +540,7 @@ object Repo {
 
         val invArr = JSONArray()
         invoices().forEach { inv ->
-            val lines = JSONArray()
-            inv.lines.forEach { l ->
-                lines.put(JSONObject().apply {
-                    put("name", l.name)
-                    put("qty", l.qty)
-                    put("rate", l.rate)
-                })
-            }
+            val lines = JSONArray(linesJson(inv))
             invArr.put(JSONObject().apply {
                 put("id", inv.id)
                 put("number", inv.number)
