@@ -6,7 +6,17 @@ import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
+import com.bahikhata.app.util.UiPrefs
+import com.bahikhata.app.util.rupees
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -46,6 +56,8 @@ fun SettingsScreen(nav: Nav) {
     var phone by remember { mutableStateOf(Repo.setting("phone", "")) }
     var address by remember { mutableStateOf(Repo.setting("address", "")) }
     var gstin by remember { mutableStateOf(Repo.setting("gstin", "")) }
+    var terms by remember { mutableStateOf(Repo.setting("terms", "")) }
+    var termsOn by remember { mutableStateOf(Repo.setting("terms_on", "1") == "1") }
     val theme = remember(tick) { Repo.setting("theme", "system") }
     val dynamic = remember(tick) { Repo.setting("dynamic", "0") == "1" }
     val hasPin = remember(tick) { Repo.setting("pin", "").isNotEmpty() }
@@ -80,63 +92,70 @@ fun SettingsScreen(nav: Nav) {
         }
     }
 
+    val backLabel = remember { nav.backLabel() }
+    val behavior = rememberLargeTitle()
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Settings") },
-                navigationIcon = { IconButton(onClick = { nav.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
-            )
-        }
+        modifier = Modifier.nestedScroll(behavior.nestedScrollConnection),
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = { IosNavBar("Settings", behavior, backLabel = backLabel, onBack = { nav.back() }) }
     ) { pad ->
-        Column(Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
 
-            SectionCard("Cloud Account (login)") {
-                when {
-                    !Cloud.configured -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.CloudOff, null, tint = MaterialTheme.colorScheme.tertiary)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Cloud login setup pending", fontWeight = FontWeight.Bold)
+            // ---- account card (like the Apple ID row)
+            Spacer(Modifier.height(8.dp))
+            GroupCell(0, 1, onClick = if (Cloud.configured && Cloud.uid == null) ({ nav.go(Screen.Auth) }) else null,
+                padding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)) {
+                Box(Modifier.size(58.dp).clip(CircleShape).background(ios.tint), contentAlignment = Alignment.Center) {
+                    Icon(if (Cloud.uid != null) Icons.Filled.Cloud else Icons.Filled.CloudOff, null, tint = Color.White, modifier = Modifier.size(30.dp))
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    when {
+                        !Cloud.configured -> {
+                            Text("Cloud login setup pending", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = ios.label)
+                            Text("Abhi data sirf is phone me hai. Neeche 'Backup' se file bana kar rakhein.", fontSize = 13.sp, color = ios.secondaryLabel)
                         }
-                        Text("Abhi data sirf is phone me hai. Neeche 'Backup' se file bana kar rakhein.", style = MaterialTheme.typography.bodySmall)
-                    }
-                    Cloud.uid == null -> {
-                        Text("Login karne se data cloud me safe rahega — app delete ho ya phone badle, login karke wapas milega.")
-                        Spacer(Modifier.height(8.dp))
-                        Button(onClick = { nav.go(Screen.Auth) }, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Filled.Login, null); Spacer(Modifier.width(8.dp)); Text("Login / Signup")
+                        Cloud.uid == null -> {
+                            Text("Login / Signup", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = ios.tint)
+                            Text("Login karne se data cloud me safe rahega — app delete ho ya phone badle, login karke wapas milega.",
+                                fontSize = 13.sp, color = ios.secondaryLabel)
                         }
-                    }
-                    else -> {
-                        KeyValue("Account", Cloud.email ?: "")
-                        KeyValue("Last sync", if (Cloud.lastSync > 0) fmtDateTime(Cloud.lastSync) else "—")
-                        if (Cloud.status.isNotBlank()) Text(Cloud.status, style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { scope.launch { Cloud.push() } }, enabled = !Cloud.syncing, modifier = Modifier.weight(1f)) {
-                                Icon(Icons.Filled.CloudUpload, null); Spacer(Modifier.width(6.dp)); Text("Sync now")
-                            }
-                            OutlinedButton(onClick = { cloudRestore = true }, enabled = !Cloud.syncing, modifier = Modifier.weight(1f)) {
-                                Icon(Icons.Filled.CloudDownload, null); Spacer(Modifier.width(6.dp)); Text("Restore")
-                            }
-                        }
-                        TextButton(onClick = { logout = true }) {
-                            Icon(Icons.AutoMirrored.Filled.Logout, null); Spacer(Modifier.width(6.dp)); Text("Logout")
+                        else -> {
+                            Text(Cloud.email ?: "", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = ios.label, maxLines = 1)
+                            Text("Last sync: " + (if (Cloud.lastSync > 0) fmtDateTime(Cloud.lastSync) else "—"), fontSize = 13.sp, color = ios.secondaryLabel)
+                            if (Cloud.status.isNotBlank()) Text(Cloud.status, fontSize = 13.sp, color = ios.tint)
                         }
                     }
                 }
+                if (Cloud.configured && Cloud.uid == null) Chevron()
+            }
+            if (Cloud.uid != null) {
+                Spacer(Modifier.height(16.dp))
+                GroupCell(0, 3, onClick = { if (!Cloud.syncing) scope.launch { Cloud.push() } }) {
+                    IconTile(Icons.Filled.CloudUpload, ios.tint); Spacer(Modifier.width(12.dp))
+                    Text(if (Cloud.syncing) "Sync ho raha hai…" else "Sync now", Modifier.weight(1f), fontSize = 17.sp, color = ios.label)
+                }
+                GroupCell(1, 3, onClick = { if (!Cloud.syncing) cloudRestore = true }) {
+                    IconTile(Icons.Filled.CloudDownload, IosOrange); Spacer(Modifier.width(12.dp))
+                    Text("Cloud se restore", Modifier.weight(1f), fontSize = 17.sp, color = ios.label); Chevron()
+                }
+                GroupCell(2, 3, onClick = { logout = true }) {
+                    IconTile(Icons.AutoMirrored.Filled.Logout, IosRed); Spacer(Modifier.width(12.dp))
+                    Text("Logout", Modifier.weight(1f), fontSize = 17.sp, color = IosRed)
+                }
             }
 
-            SectionCard("Dukan ki jaankari (bill/PDF par chhapegi)") {
+            // ---- shop
+            SectionHeader("Dukan ki jaankari")
+            SectionCard {
                 TxtField(business, { business = it }, "Dukan / business ka naam", Modifier.fillMaxWidth())
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(10.dp))
                 TxtField(phone, { phone = it }, "Mobile", Modifier.fillMaxWidth(), KeyboardType.Phone)
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(10.dp))
                 TxtField(address, { address = it }, "Pata", Modifier.fillMaxWidth())
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(10.dp))
                 TxtField(gstin, { gstin = it.uppercase() }, "GSTIN (optional)", Modifier.fillMaxWidth())
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(12.dp))
                 Button(onClick = {
                     Repo.setSetting("business", business.trim().ifEmpty { "Meri Dukan" })
                     Repo.setSetting("phone", phone.trim())
@@ -145,50 +164,145 @@ fun SettingsScreen(nav: Nav) {
                     toast("Save ho gaya ✓")
                 }, modifier = Modifier.fillMaxWidth()) { Text("Save") }
             }
+            SectionFooter("Yeh jaankari bill aur PDF par chhapegi.")
 
-            SectionCard("Dikhawat (Theme)") {
-                ChipsRow(listOf("System", "Light", "Dark"), theme.replaceFirstChar { it.uppercase() },
-                    { Repo.setSetting("theme", it.lowercase()) })
+            SectionHeader("Statement / Bill: Terms & Rules")
+            SectionCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("PDF par dikhao", Modifier.weight(1f), fontSize = 17.sp)
+                    IosSwitch(termsOn, { termsOn = it; Repo.setSetting("terms_on", if (it) "1" else "0") })
+                }
+                Spacer(Modifier.height(10.dp))
+                TxtField(terms, { terms = it }, "Apne rules likhein (har line alag)", Modifier.fillMaxWidth().heightIn(min = 90.dp), singleLine = false)
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(onClick = { Repo.setSetting("terms", terms.trim()); toast("Terms save ho gaye ✓") }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Terms save karein")
+                }
+            }
+            SectionFooter("Party statement aur bill PDF ke neeche chhapenge. Backup me bhi jaate hain.")
+
+            // ---- appearance
+            SectionHeader("Dikhawat")
+            SectionCard {
+                Text("Theme", fontSize = 13.sp, color = ios.secondaryLabel); Spacer(Modifier.height(6.dp))
+                IosSegmented(listOf("System", "Light", "Dark"), theme.replaceFirstChar { it.uppercase() }, { Repo.setSetting("theme", it.lowercase()) })
+                Spacer(Modifier.height(14.dp))
+                Text("Accent colour", fontSize = 13.sp, color = ios.secondaryLabel); Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    listOf("blue", "green", "orange", "purple", "pink").forEach { a ->
+                        val c = accentColor(a, ios.dark)
+                        Box(Modifier.size(34.dp).clip(CircleShape).background(c).clickable { UiPrefs.changeAccent(a) }, contentAlignment = Alignment.Center) {
+                            if (UiPrefs.accent == a) Icon(Icons.Filled.Check, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Text("Text size", fontSize = 13.sp, color = ios.secondaryLabel); Spacer(Modifier.height(6.dp))
+                val sizes = listOf("s" to "Chhota", "m" to "Normal", "l" to "Bada", "xl" to "XL")
+                IosSegmented(sizes.map { it.second }, sizes.first { it.first == UiPrefs.textSize }.second,
+                    { v -> UiPrefs.changeTextSize(sizes.first { it.second == v }.first) })
+                Spacer(Modifier.height(14.dp))
+                Text("Font style", fontSize = 13.sp, color = ios.secondaryLabel); Spacer(Modifier.height(6.dp))
+                val fonts = listOf("system" to "System", "serif" to "Serif", "condensed" to "Patla", "mono" to "Mono")
+                IosSegmented(fonts.map { it.second }, (fonts.firstOrNull { it.first == UiPrefs.fontStyle } ?: fonts[0]).second,
+                    { v -> UiPrefs.changeFontStyle(fonts.first { it.second == v }.first) })
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    Spacer(Modifier.height(14.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Wallpaper ke colours (Material You)", Modifier.weight(1f))
-                        Switch(checked = dynamic, onCheckedChange = { Repo.setSetting("dynamic", if (it) "1" else "0") })
+                        Text("Wallpaper ka colour (Material You)", Modifier.weight(1f), fontSize = 17.sp)
+                        IosSwitch(checked = dynamic, onCheckedChange = { Repo.setSetting("dynamic", if (it) "1" else "0") })
                     }
                 }
             }
 
-            SectionCard("Suraksha (PIN lock)") {
-                Text(if (hasPin) "PIN lock ON hai — app kholne par PIN maanga jayega" else "PIN lock OFF hai")
+            // ---- money format
+            SectionHeader("Paisa format")
+            SectionCard {
+                Text("Currency", fontSize = 13.sp, color = ios.secondaryLabel); Spacer(Modifier.height(6.dp))
+                IosSegmented(listOf("₹", "Rs.", "$", "€", "£"), UiPrefs.currency, { UiPrefs.changeCurrency(it) })
+                Spacer(Modifier.height(14.dp))
+                Text("Ginti ka tareeka", fontSize = 13.sp, color = ios.secondaryLabel); Spacer(Modifier.height(6.dp))
+                IosSegmented(listOf("1,00,000", "100,000"), if (UiPrefs.indianGrouping) "1,00,000" else "100,000",
+                    { UiPrefs.changeIndianGrouping(it == "1,00,000") })
+            }
+            SectionFooter("Example: ${rupees(125000.0)}")
+
+            // ---- feel + privacy
+            SectionHeader("Anubhav aur privacy")
+            GroupCell(0, 3) {
+                IconTile(Icons.Filled.Vibration, Color(0xFF5856D6)); Spacer(Modifier.width(12.dp))
+                Text("Haptic (vibration) feedback", Modifier.weight(1f), fontSize = 17.sp, color = ios.label)
+                IosSwitch(UiPrefs.haptics, { UiPrefs.changeHaptics(it) })
+            }
+            GroupCell(1, 3) {
+                IconTile(Icons.Filled.VisibilityOff, ios.gray); Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Amounts chhupao", fontSize = 17.sp, color = ios.label)
+                    Text("Home ke totals •••• dikhenge, tap karke dekhein", fontSize = 12.sp, color = ios.secondaryLabel)
+                }
+                IosSwitch(UiPrefs.hideAmounts, { UiPrefs.changeHideAmounts(it) })
+            }
+            GroupCell(2, 3) {
+                IconTile(Icons.Filled.Lock, IosRed); Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("PIN lock", fontSize = 17.sp, color = ios.label)
+                    Text(if (hasPin) "App kholne par PIN maanga jayega" else "Off", fontSize = 12.sp, color = ios.secondaryLabel)
+                }
+                IosSwitch(hasPin, { on -> if (on) pinDialog = true else { Repo.setSetting("pin", ""); toast("PIN hata diya") } })
+            }
+            if (hasPin) {
                 Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { pinDialog = true }) { Text(if (hasPin) "PIN badlein" else "PIN lagayein") }
-                    if (hasPin) OutlinedButton(onClick = { Repo.setSetting("pin", ""); toast("PIN hata diya") }) { Text("PIN hatayein") }
+                GroupCell(0, 1, onClick = { pinDialog = true }) {
+                    Text("PIN badlein", Modifier.weight(1f), fontSize = 17.sp, color = ios.tint); Chevron()
                 }
             }
 
-            SectionCard("Backup / Restore (JSON file)") {
-                ClickRow(Icons.Filled.SaveAlt, "Backup file save karein", "Phone/Drive me .json file") {
-                    exportLauncher.launch("bahikhata-backup-$stamp.json")
+            // ---- backup
+            SectionHeader("Backup / Restore (JSON file)")
+            GroupCell(0, 3, onClick = { exportLauncher.launch("bahikhata-backup-$stamp.json") }, separatorInset = 57.dp) {
+                IconTile(Icons.Filled.SaveAlt, ios.tint); Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Backup file save karein", fontSize = 17.sp, color = ios.label)
+                    Text("Phone/Drive me .json file", fontSize = 12.sp, color = ios.secondaryLabel)
                 }
-                ClickRow(Icons.Filled.Share, "Backup share karein", "WhatsApp / Gmail / Drive par bhejein") {
-                    try {
-                        val f = File(ctx.cacheDir, "bahikhata-backup-$stamp.json")
-                        f.writeText(Repo.exportJson().toString(2))
-                        shareFile(ctx, f, "application/json", "Backup bhejein")
-                    } catch (e: Exception) { toast("Backup nahi bana") }
-                }
-                ClickRow(Icons.Filled.Restore, "Backup se restore karein", "Purani .json file chunein") {
-                    importLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream", "*/*"))
-                }
+                Chevron()
             }
-
-            SectionCard("Khatarnak") {
-                ClickRow(Icons.Filled.DeleteForever, "Saara data delete karein", "Parties, entries, cashbook, stock, bills") { wipe = true }
+            GroupCell(1, 3, onClick = {
+                try {
+                    val f = File(ctx.cacheDir, "bahikhata-backup-$stamp.json")
+                    f.writeText(Repo.exportJson().toString(2))
+                    shareFile(ctx, f, "application/json", "Backup bhejein")
+                } catch (e: Exception) { toast("Backup nahi bana") }
+            }, separatorInset = 57.dp) {
+                IconTile(Icons.Filled.Share, IosGreen); Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Backup share karein", fontSize = 17.sp, color = ios.label)
+                    Text("WhatsApp / Gmail / Drive par bhejein", fontSize = 12.sp, color = ios.secondaryLabel)
+                }
+                Chevron()
             }
+            GroupCell(2, 3, onClick = {
+                importLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream", "*/*"))
+            }) {
+                IconTile(Icons.Filled.Restore, IosOrange); Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Backup se restore karein", fontSize = 17.sp, color = ios.label)
+                    Text("Purani .json file chunein", fontSize = 12.sp, color = ios.secondaryLabel)
+                }
+                Chevron()
+            }
+            SectionFooter("Party photos sirf is phone me rehti hain (backup/cloud me nahi jaati).")
 
-            Text("BahiKhata Pro v${BuildConfig.VERSION_NAME}", Modifier.align(Alignment.CenterHorizontally),
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(24.dp))
+            GroupCell(0, 1, onClick = { wipe = true }) {
+                Text("Saara data delete karein", Modifier.weight(1f), fontSize = 17.sp, color = IosRed, textAlign = TextAlign.Center)
+            }
+            SectionFooter("Parties, entries, cashbook, stock, bills — sab hat jayega.")
+
+            Spacer(Modifier.height(20.dp))
+            Text("BahiKhata Pro v${BuildConfig.VERSION_NAME}", Modifier.align(Alignment.CenterHorizontally),
+                fontSize = 13.sp, color = ios.secondaryLabel)
+            Spacer(Modifier.height(32.dp))
         }
     }
 
@@ -196,17 +310,15 @@ fun SettingsScreen(nav: Nav) {
         var p1 by remember { mutableStateOf("") }
         var p2 by remember { mutableStateOf("") }
         var err by remember { mutableStateOf<String?>(null) }
-        AlertDialog(
+        IosAlert(
             onDismissRequest = { pinDialog = false },
             title = { Text("4 ankon ka PIN") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(p1, { v -> p1 = v.filter { it.isDigit() }.take(4) }, label = { Text("Naya PIN") },
-                        singleLine = true, visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword))
-                    OutlinedTextField(p2, { v -> p2 = v.filter { it.isDigit() }.take(4) }, label = { Text("PIN dobara") },
-                        singleLine = true, visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword))
+                    IosField(p1, { v -> p1 = v.filter { it.isDigit() }.take(4) }, "", placeholder = "Naya PIN",
+                        password = true, keyboard = KeyboardType.NumberPassword)
+                    IosField(p2, { v -> p2 = v.filter { it.isDigit() }.take(4) }, "", placeholder = "PIN dobara",
+                        password = true, keyboard = KeyboardType.NumberPassword)
                     err?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Text(if (Cloud.uid != null) "PIN bhoolne par cloud password se khol sakte hain." else
                         "Dhyan dein: PIN bhool gaye to bina cloud login ke reset nahi hoga.", style = MaterialTheme.typography.bodySmall)
@@ -219,9 +331,9 @@ fun SettingsScreen(nav: Nav) {
                         p1 != p2 -> err = "Dono PIN same nahi"
                         else -> { Repo.setSetting("pin", p1); pinDialog = false; toast("PIN lag gaya ✓") }
                     }
-                }) { Text("Save") }
+                }) { Text("Save", fontSize = 17.sp, fontWeight = FontWeight.SemiBold) }
             },
-            dismissButton = { TextButton(onClick = { pinDialog = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { pinDialog = false }) { Text("Cancel", fontSize = 17.sp) } }
         )
     }
     restoreJson?.let { obj ->
@@ -235,7 +347,7 @@ fun SettingsScreen(nav: Nav) {
         onConfirm = { scope.launch { val e = Cloud.pull(); toast(e ?: "Cloud se data aa gaya ✓") } },
         onDismiss = { cloudRestore = false })
     if (logout) {
-        AlertDialog(
+        IosAlert(
             onDismissRequest = { logout = false },
             title = { Text("Logout") },
             text = { Text("Data cloud me safe hai. Logout ke baad is phone ka data rakhna hai ya hatana hai?") },
@@ -248,13 +360,13 @@ fun SettingsScreen(nav: Nav) {
                         Repo.wipeAll()
                         toast("Logout ho gaya, phone se data hata diya")
                     }
-                }) { Text("Logout + data hatao", color = MaterialTheme.colorScheme.error) }
+                }) { Text("Logout + data hatao", color = IosRed, fontSize = 15.sp) }
             },
             dismissButton = {
                 TextButton(onClick = {
                     logout = false
                     scope.launch { Cloud.push(); Cloud.signOut(); toast("Logout ho gaya") }
-                }) { Text("Sirf logout") }
+                }) { Text("Sirf logout", fontSize = 15.sp) }
             }
         )
     }

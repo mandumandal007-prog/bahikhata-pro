@@ -4,6 +4,11 @@ package com.bahikhata.app.ui
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -73,7 +78,7 @@ fun ReportsScreen() {
     val dayIn = days.map { d -> allCash.filter { it.cashIn && it.date >= d && it.date < addDays(d, 1) }.sumOf { it.amount } }
     val dayOut = days.map { d -> allCash.filter { !it.cashIn && it.date >= d && it.date < addDays(d, 1) }.sumOf { it.amount } }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         ChipsRow(listOf("Aaj", "7 din", "Is mahine", "Pichhla mahina", "Sab"), period, { period = it })
 
         SectionCard("Udhaar khata ($period)") {
@@ -108,7 +113,7 @@ fun ReportsScreen() {
             KeyValue("Aapko dene hain", rupees(payable), bold = true, color = GotGreen)
             if (topDebtors.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
-                Text("Sabse zyada baaki", style = MaterialTheme.typography.labelLarge)
+                Text("Sabse zyada baaki", fontSize = 13.sp, color = ios.secondaryLabel)
                 topDebtors.forEach { KeyValue(it.name, rupees(it.balance)) }
             }
         }
@@ -117,8 +122,8 @@ fun ReportsScreen() {
             expenseByCat.forEach { (cat, v) ->
                 Text("$cat — ${rupees(v)}", style = MaterialTheme.typography.bodyMedium)
                 LinearProgressIndicator(
-                    progress = { (v / max).toFloat() }, color = GaveRed,
-                    modifier = Modifier.fillMaxWidth().height(8.dp).padding(bottom = 2.dp)
+                    progress = { (v / max).toFloat() }, color = GaveRed, trackColor = ios.fill,
+                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)), drawStopIndicator = {}, gapSize = 0.dp
                 )
                 Spacer(Modifier.height(6.dp))
             }
@@ -172,13 +177,12 @@ fun BarChart(labels: List<String>, a: List<Double>, b: List<Double>) {
 
 @Composable
 fun ToolsScreen(nav: Nav) {
+    val backLabel = remember { nav.backLabel() }
+    val behavior = rememberLargeTitle()
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Calculators") },
-                navigationIcon = { IconButton(onClick = { nav.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
-            )
-        }
+        modifier = Modifier.nestedScroll(behavior.nestedScrollConnection),
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = { IosNavBar("Calculators", behavior, backLabel = backLabel, onBack = { nav.back() }) }
     ) { pad ->
         Column(Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ToolCard("GST Calculator", Icons.Filled.Percent, true) { GstCalc() }
@@ -194,17 +198,19 @@ fun ToolsScreen(nav: Nav) {
 @Composable
 private fun ToolCard(title: String, icon: ImageVector, startOpen: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
     var open by remember { mutableStateOf(startOpen) }
-    ElevatedCard(onClick = { open = !open }, modifier = Modifier.fillMaxWidth().animateContentSize(), shape = RoundedCornerShape(16.dp)) {
-        Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(ios.cell).animateContentSize()) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(Modifier.clickable { open = !open }, verticalAlignment = Alignment.CenterVertically) {
+                IconTile(icon, ios.tint)
                 Spacer(Modifier.width(12.dp))
-                Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null)
+                Text(title, Modifier.weight(1f), fontSize = 17.sp, color = ios.label)
+                Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ChevronRight, null, tint = ios.tertiaryLabel)
             }
             if (open) {
                 Spacer(Modifier.height(12.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+                CompositionLocalProvider(LocalOnCell provides true) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
+                }
             }
         }
     }
@@ -212,7 +218,7 @@ private fun ToolCard(title: String, icon: ImageVector, startOpen: Boolean = fals
 
 @Composable
 private fun ResultBox(content: @Composable ColumnScope.() -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+    Surface(color = ios.tint.copy(alpha = 0.10f), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), content = content)
     }
 }

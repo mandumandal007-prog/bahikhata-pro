@@ -39,7 +39,7 @@ phir net aate hi cloud me). App delete karke dobara install karein → same emai
 
 Firebase config build ke time aata hai — **repo me koi key nahi rakhi gayi**:
 
-1. Firebase console → project → *Add app* → Android → package `com.bahikhata.app` → `google-services.json` download.
+1. Firebase console → project → *Add app* → Android → package `com.bhaikhata.app` → `google-services.json` download. (App id / installed package: `com.bhaikhata.app`; Kotlin source package stays `com.bahikhata.app`.)
 2. Authentication → Sign-in method → **Email/Password** ON.
 3. Firestore Database → Create (production mode) → Rules:
    ```
@@ -75,3 +75,7 @@ app/src/main/java/com/bahikhata/app/
 ## License
 
 MIT
+
+
+## Design (v1.0.37+)
+iOS-style UI: large collapsing titles, translucent tab bar, inset grouped lists, iOS switches, segmented controls, sheets, action sheets and alerts, slide transitions, dark mode. Party photos (stored only on the phone). Settings: text size, font style, accent colour, currency/number format, haptics, hide amounts.

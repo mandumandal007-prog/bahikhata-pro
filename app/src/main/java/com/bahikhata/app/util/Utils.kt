@@ -33,11 +33,12 @@ fun money(n: Double): String {
     val a = abs(n)
     val whole = a.toLong()
     val paise = (a * 100).roundToInt() % 100
-    val body = if (paise == 0) groupIndian(whole) else groupIndian(whole) + "." + paise.toString().padStart(2, '0')
+    val g = if (NumFmt.indian) groupIndian(whole) else String.format(Locale.ENGLISH, "%,d", whole)
+    val body = if (paise == 0) g else g + "." + paise.toString().padStart(2, '0')
     return (if (neg) "-" else "") + body
 }
 
-fun rupees(n: Double): String = "₹" + money(n)
+fun rupees(n: Double): String = NumFmt.symbol + money(n)
 
 fun compactRupees(n: Double): String {
     val a = abs(n)
@@ -116,9 +117,8 @@ fun shareText(ctx: Context, text: String) {
 
 /** Opens WhatsApp chat with the given number (or WhatsApp picker if the number is empty). */
 fun whatsapp(ctx: Context, phone: String, message: String) {
-    val digits = phone.filter { it.isDigit() }
-    val url = if (digits.length >= 10) {
-        val withCc = if (digits.length == 10) "91$digits" else digits
+    val withCc = normPhone(phone)
+    val url = if (withCc.isNotEmpty()) {
         "https://wa.me/$withCc?text=" + Uri.encode(message)
     } else {
         "https://wa.me/?text=" + Uri.encode(message)
@@ -127,6 +127,50 @@ fun whatsapp(ctx: Context, phone: String, message: String) {
         ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     } catch (e: Exception) {
         shareText(ctx, message)
+    }
+}
+
+/** Digits with country code (default India 91), or "" when the number is too short. */
+fun normPhone(phone: String): String {
+    var d = phone.filter { it.isDigit() }
+    if (d.startsWith("00")) d = d.drop(2)
+    if (d.length == 11 && d.startsWith("0")) d = d.drop(1)
+    return when {
+        d.length == 10 -> "91$d"
+        d.length > 10 -> d
+        else -> ""
+    }
+}
+
+/** Sends a file straight to this number's WhatsApp chat; falls back to wa.me text + normal share. */
+fun whatsappFile(ctx: Context, file: File, mime: String, phone: String, text: String) {
+    val num = normPhone(phone)
+    val uri: Uri = try { FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", file) } catch (e: Exception) { return }
+    for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
+        try {
+            val i = Intent(Intent.ACTION_SEND).apply {
+                type = mime
+                setPackage(pkg)
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_TEXT, text)
+                if (num.isNotEmpty()) putExtra("jid", "$num@s.whatsapp.net")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            ctx.startActivity(i)
+            return
+        } catch (e: Exception) {
+        }
+    }
+    whatsapp(ctx, phone, text)
+}
+
+/** Opens the SMS app to this number with the text filled in (SMS cannot carry a PDF). */
+fun smsTo(ctx: Context, phone: String, text: String) {
+    val num = normPhone(phone).ifEmpty { phone.filter { it.isDigit() } }
+    try {
+        ctx.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$num")).apply { putExtra("sms_body", text) })
+    } catch (e: Exception) {
+        shareText(ctx, text)
     }
 }
 

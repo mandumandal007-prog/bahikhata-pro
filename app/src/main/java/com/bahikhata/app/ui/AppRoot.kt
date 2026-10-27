@@ -3,7 +3,24 @@
 package com.bahikhata.app.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.*
@@ -29,12 +46,12 @@ sealed class Screen {
     data object Auth : Screen()
 }
 
-enum class Tab(val label: String, val icon: ImageVector) {
-    KHATA("Khata", Icons.Filled.MenuBook),
-    CASH("Cashbook", Icons.Filled.AccountBalanceWallet),
-    STOCK("Stock", Icons.Filled.Inventory2),
-    BILL("Bill", Icons.AutoMirrored.Filled.ReceiptLong),
-    REPORTS("Reports", Icons.Filled.BarChart)
+enum class Tab(val label: String, val icon: ImageVector, val outline: ImageVector, val title: String) {
+    KHATA("Khata", Icons.AutoMirrored.Filled.MenuBook, Icons.AutoMirrored.Outlined.MenuBook, "Khata"),
+    CASH("Cashbook", Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet, "Cashbook"),
+    STOCK("Stock", Icons.Filled.Inventory2, Icons.Outlined.Inventory2, "Stock"),
+    BILL("Bill", Icons.AutoMirrored.Filled.ReceiptLong, Icons.AutoMirrored.Outlined.ReceiptLong, "Bills"),
+    REPORTS("Reports", Icons.Filled.BarChart, Icons.Outlined.BarChart, "Reports")
 }
 
 class Nav {
@@ -43,6 +60,16 @@ class Nav {
     val current: Screen get() = stack.last()
     fun go(s: Screen) { stack.add(s) }
     fun back(): Boolean = if (stack.size > 1) { stack.removeAt(stack.lastIndex); true } else false
+    /** Title of the screen below the current one, for the iOS back button. */
+    fun backLabel(): String = when (stack.getOrNull(stack.size - 2)) {
+        Screen.Tabs -> tab.title
+        Screen.Settings -> "Settings"
+        Screen.Tools -> "Calculators"
+        is Screen.PartyDetail -> "Party"
+        Screen.NewInvoice -> "Bill"
+        Screen.Auth -> "Account"
+        null -> "Back"
+    }
 }
 
 @Composable
@@ -90,52 +117,61 @@ fun MainShell() {
     BackHandler(enabled = nav.stack.size > 1) { nav.back() }
     BackHandler(enabled = nav.stack.size == 1 && nav.tab != Tab.KHATA) { nav.tab = Tab.KHATA }
 
-    when (val s = nav.current) {
-        is Screen.PartyDetail -> PartyScreen(s.id, nav)
-        Screen.NewInvoice -> InvoiceCreateScreen(nav)
-        Screen.Tools -> ToolsScreen(nav)
-        Screen.Settings -> SettingsScreen(nav)
-        Screen.Auth -> AuthScreen(firstLaunch = false, onDone = { nav.back() })
-        Screen.Tabs -> TabsScaffold(nav)
+    // iOS push/pop: new screen slides in from the right, the old one moves a third to the left (parallax).
+    AnimatedContent(
+        targetState = nav.stack.size to nav.current,
+        transitionSpec = {
+            val forward = targetState.first > initialState.first
+            val spec = tween<IntOffset>(340, easing = CubicBezierEasing(0.2f, 0.9f, 0.25f, 1f))
+            val t = if (forward) {
+                slideInHorizontally(spec) { it } togetherWith slideOutHorizontally(spec) { -it / 3 }
+            } else {
+                slideInHorizontally(spec) { -it / 3 } togetherWith slideOutHorizontally(spec) { it }
+            }
+            t.apply { targetContentZIndex = if (forward) 1f else -1f }
+        },
+        label = "nav"
+    ) { (_, s) ->
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            when (s) {
+                is Screen.PartyDetail -> PartyScreen(s.id, nav)
+                Screen.NewInvoice -> InvoiceCreateScreen(nav)
+                Screen.Tools -> ToolsScreen(nav)
+                Screen.Settings -> SettingsScreen(nav)
+                Screen.Auth -> AuthScreen(firstLaunch = false, onDone = { nav.back() })
+                Screen.Tabs -> TabsScaffold(nav)
+            }
+        }
     }
 }
 
 @Composable
 fun TabsScaffold(nav: Nav) {
     @Suppress("UNUSED_VARIABLE") val t = Repo.tick
+    val behavior = key(nav.tab) { rememberLargeTitle() }
     Scaffold(
+        modifier = Modifier.nestedScroll(behavior.nestedScrollConnection),
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(Repo.businessName(), fontWeight = FontWeight.Bold)
-                        Text(nav.tab.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            IosNavBar(
+                title = nav.tab.title,
+                subtitle = Repo.businessName(),
+                behavior = behavior,
+                leading = {
+                    if (Cloud.uid != null) {
+                        Icon(
+                            if (Cloud.syncing) Icons.Outlined.CloudSync else Icons.Outlined.CloudDone, "Cloud",
+                            tint = ios.tint, modifier = Modifier.padding(start = 12.dp).size(22.dp)
+                        )
                     }
                 },
                 actions = {
-                    if (Cloud.uid != null) {
-                        Icon(
-                            if (Cloud.syncing) Icons.Filled.CloudSync else Icons.Filled.CloudDone, "Cloud",
-                            tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 4.dp)
-                        )
-                    }
-                    IconButton(onClick = { nav.go(Screen.Tools) }) { Icon(Icons.Filled.Calculate, "Calculators") }
-                    IconButton(onClick = { nav.go(Screen.Settings) }) { Icon(Icons.Filled.Settings, "Settings") }
+                    NavIcon(Icons.Outlined.Calculate, "Calculators") { nav.go(Screen.Tools) }
+                    NavIcon(Icons.Outlined.Settings, "Settings") { nav.go(Screen.Settings) }
                 }
             )
         },
-        bottomBar = {
-            NavigationBar {
-                Tab.entries.forEach { tab ->
-                    NavigationBarItem(
-                        selected = nav.tab == tab,
-                        onClick = { nav.tab = tab },
-                        icon = { Icon(tab.icon, tab.label) },
-                        label = { Text(tab.label) }
-                    )
-                }
-            }
-        }
+        bottomBar = { IosTabBar(nav) }
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
             when (nav.tab) {
@@ -144,6 +180,33 @@ fun TabsScaffold(nav: Nav) {
                 Tab.STOCK -> StockScreen()
                 Tab.BILL -> InvoiceListScreen(nav)
                 Tab.REPORTS -> ReportsScreen()
+            }
+        }
+    }
+}
+
+/** Translucent iOS tab bar with outline icons; the selected tab is filled and tinted. */
+@Composable
+fun IosTabBar(nav: Nav) {
+    val tap = rememberHaptic()
+    Column(Modifier.fillMaxWidth().background(ios.barBg)) {
+        Hairline()
+        Row(Modifier.fillMaxWidth().navigationBarsPadding().height(54.dp)) {
+            Tab.entries.forEach { tab ->
+                val sel = nav.tab == tab
+                val color = if (sel) ios.tint else ios.gray
+                Column(
+                    Modifier.weight(1f).fillMaxHeight()
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                            if (!sel) { tap(); nav.tab = tab }
+                        },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(if (sel) tab.icon else tab.outline, tab.label, tint = color, modifier = Modifier.size(25.dp))
+                    Spacer(Modifier.height(2.dp))
+                    Text(tab.label, fontSize = 10.sp, fontWeight = FontWeight.Medium, color = color, maxLines = 1)
+                }
             }
         }
     }

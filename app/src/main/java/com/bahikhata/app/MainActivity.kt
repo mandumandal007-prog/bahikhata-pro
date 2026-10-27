@@ -14,6 +14,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         Repo.init(this)
+        com.bahikhata.app.util.UiPrefs.init(this)
         Cloud.init(this)
         setContent {
             BahiTheme {

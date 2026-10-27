@@ -2,7 +2,14 @@
 
 package com.bahikhata.app.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.outlined.PersonSearch
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
+import com.bahikhata.app.util.smsTo
+import com.bahikhata.app.util.whatsappFile
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -52,6 +59,32 @@ fun invoiceText(inv: Invoice): String = buildString {
     append("Dhanyavaad 🙏")
 }
 
+/** iOS action sheet: send the bill PDF to the customer's WhatsApp, SMS, or any app. */
+@Composable
+fun InvoiceShareSheet(inv: Invoice, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    var noPhone by remember { mutableStateOf(false) }
+    val who = inv.partyName.ifBlank { "customer" }
+    val summary = "Namaste ${inv.partyName} ji, ${Repo.businessName()} ka bill ${inv.number}: ${rupees(inv.total)}" +
+        (if (inv.paid) " (Paid)." else " baaki hai.") + " Dhanyavaad 🙏"
+    if (!noPhone) IosActionSheet("Bill PDF bhejein", listOf(
+        SheetAction("WhatsApp: $who") {
+            if (inv.phone.isBlank()) noPhone = true else {
+                val f = Pdf.invoice(ctx, inv, Repo.businessName(), Repo.setting("address", ""), Repo.setting("phone", ""), Repo.setting("gstin", ""))
+                whatsappFile(ctx, f, "application/pdf", inv.phone, summary)
+            }
+        },
+        SheetAction("SMS: $who") { if (inv.phone.isBlank()) noPhone = true else smsTo(ctx, inv.phone, summary) },
+        SheetAction("Doosre app se share") { shareInvoicePdf(ctx, inv) }
+    )) { if (!noPhone) onDismiss() }
+    if (noPhone) IosAlert(
+        onDismissRequest = { onDismiss() },
+        title = { Text("Mobile number nahi hai") },
+        text = { Text("Is bill me customer ka number nahi hai. Number ke saath bill banayein ya 'Doosre app se share' use karein.") },
+        confirmButton = { TextButton(onClick = { onDismiss() }) { Text("OK", fontSize = 17.sp, fontWeight = FontWeight.SemiBold) } }
+    )
+}
+
 @Composable
 fun InvoiceListScreen(nav: Nav) {
     val ctx = LocalContext.current
@@ -59,12 +92,13 @@ fun InvoiceListScreen(nav: Nav) {
     val list = remember(tick) { Repo.invoices() }
     var filter by remember { mutableStateOf("Sab") }
     var del by remember { mutableStateOf<Invoice?>(null) }
+    var shareFor by remember { mutableStateOf<Invoice?>(null) }
     val shown = list.filter { filter == "Sab" || (filter == "Paid" && it.paid) || (filter == "Baaki" && !it.paid) }
     val total = list.sumOf { it.total }
     val unpaid = list.filter { !it.paid }.sumOf { it.total }
 
     Box(Modifier.fillMaxSize()) {
-        LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp)) {
+        LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp)) {
             item {
                 SectionCard {
                     Row {
@@ -73,43 +107,31 @@ fun InvoiceListScreen(nav: Nav) {
                         StatBox("Baaki", rupees(unpaid), GaveRed, Modifier.weight(1f))
                     }
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(14.dp))
                 ChipsRow(listOf("Sab", "Baaki", "Paid"), filter, { filter = it })
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(14.dp))
             }
             if (shown.isEmpty()) item { EmptyState(Icons.AutoMirrored.Filled.ReceiptLong, "Koi bill nahi. 'Naya Bill' dabayein.") }
-            items(shown, key = { it.id }) { inv ->
+            itemsIndexed(shown, key = { _, x -> x.id }) { i, inv ->
                 var menu by remember { mutableStateOf(false) }
-                Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("${inv.number} • ${inv.partyName.ifBlank { "Cash" }}", fontWeight = FontWeight.SemiBold,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("${fmtDate(inv.date)} • ${inv.lines.size} item" + (if (inv.gstPercent > 0) " • GST ${money(inv.gstPercent)}%" else ""),
-                                style = MaterialTheme.typography.bodySmall)
-                            Spacer(Modifier.height(4.dp))
-                            FilterChip(
-                                selected = inv.paid, onClick = { Repo.setInvoicePaid(inv.id, !inv.paid) },
-                                label = { Text(if (inv.paid) "Paid ✓" else "Baaki — tap = Paid") }
-                            )
-                        }
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(rupees(inv.total), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                            Row {
-                                IconButton(onClick = { shareInvoicePdf(ctx, inv) }) { Icon(Icons.Filled.PictureAsPdf, "PDF") }
-                                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More") }
-                                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                                    DropdownMenuItem(text = { Text("PDF share") }, leadingIcon = { Icon(Icons.Filled.Share, null) },
-                                        onClick = { menu = false; shareInvoicePdf(ctx, inv) })
-                                    DropdownMenuItem(text = { Text("WhatsApp par text") }, leadingIcon = { Icon(Icons.Filled.Send, null) },
-                                        onClick = { menu = false; whatsapp(ctx, inv.phone, invoiceText(inv)) })
-                                    DropdownMenuItem(text = { Text("Delete") }, leadingIcon = { Icon(Icons.Filled.Delete, null) },
-                                        onClick = { menu = false; del = inv })
-                                }
-                            }
-                        }
+                GroupCell(i, shown.size, onClick = { menu = true }, padding = PaddingValues(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("${inv.number} · ${inv.partyName.ifBlank { "Cash" }}", fontSize = 17.sp, color = ios.label,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("${fmtDate(inv.date)} · ${inv.lines.size} item" + (if (inv.gstPercent > 0) " · GST ${money(inv.gstPercent)}%" else ""),
+                            fontSize = 13.sp, color = ios.secondaryLabel)
+                        Spacer(Modifier.height(6.dp))
+                        IosPill(if (inv.paid) "Paid ✓" else "Baaki — tap = Paid", inv.paid, { Repo.setInvoicePaid(inv.id, !inv.paid) }, GotGreen)
                     }
+                    Text(rupees(inv.total), fontWeight = FontWeight.SemiBold, fontSize = 17.sp, color = ios.label)
+                    Chevron()
                 }
+                if (menu) IosActionSheet("${inv.number} · ${rupees(inv.total)}", listOf(
+                    SheetAction("PDF bhejein (WhatsApp / SMS)") { shareFor = inv },
+                    SheetAction("WhatsApp par text") { whatsapp(ctx, inv.phone, invoiceText(inv)) },
+                    SheetAction(if (inv.paid) "Baaki mark karein" else "Paid mark karein") { Repo.setInvoicePaid(inv.id, !inv.paid) },
+                    SheetAction("Bill delete karein", destructive = true) { del = inv }
+                )) { menu = false }
             }
         }
         ExtendedFloatingActionButton(
@@ -117,6 +139,7 @@ fun InvoiceListScreen(nav: Nav) {
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
         )
     }
+    shareFor?.let { inv -> InvoiceShareSheet(inv) { shareFor = null } }
     del?.let { inv ->
         ConfirmDialog("Bill delete karein?", "${inv.number} • ${rupees(inv.total)}", "Delete",
             onConfirm = { Repo.deleteInvoice(inv.id) }, onDismiss = { del = null })
@@ -144,6 +167,7 @@ fun InvoiceCreateScreen(nav: Nav) {
     var pickParty by remember { mutableStateOf(false) }
     var lineDialog by remember { mutableStateOf<Int?>(null) } // -1 = new
     var saved by remember { mutableStateOf<Invoice?>(null) }
+    var sharedSaved by remember { mutableStateOf<Invoice?>(null) }
     var err by remember { mutableStateOf<String?>(null) }
 
     val draft = Invoice(
@@ -152,19 +176,19 @@ fun InvoiceCreateScreen(nav: Nav) {
         gstPercent = gst.toAmount(), discount = discount.toAmount(), paid = paid
     )
 
+    val backLabel = remember { nav.backLabel() }
+    val behavior = rememberLargeTitle()
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Naya Bill") },
-                navigationIcon = { IconButton(onClick = { nav.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
-            )
-        },
+        modifier = Modifier.nestedScroll(behavior.nestedScrollConnection),
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = { IosNavBar("Naya Bill", behavior, backLabel = backLabel, onBack = { nav.back() }) },
         bottomBar = {
-            Surface(tonalElevation = 3.dp) {
+            Column(Modifier.background(ios.barBg)) {
+                Hairline()
                 Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Total", style = MaterialTheme.typography.labelMedium)
-                        Text(rupees(draft.total), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text("Total", fontSize = 13.sp, color = ios.secondaryLabel)
+                        Text(rupees(draft.total), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = ios.label)
                     }
                     Button(onClick = {
                         err = null
@@ -190,12 +214,12 @@ fun InvoiceCreateScreen(nav: Nav) {
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TxtField(partyName, { partyName = it; partyId = null }, "Party / customer ka naam", Modifier.weight(1f))
-                IconButton(onClick = { pickParty = true }) { Icon(Icons.Filled.PersonSearch, "Party chunein") }
+                IconButton(onClick = { pickParty = true }, modifier = Modifier.padding(top = 18.dp)) { Icon(Icons.Outlined.PersonSearch, "Party chunein", tint = ios.tint) }
             }
             TxtField(phone, { phone = it }, "Mobile", Modifier.fillMaxWidth(), KeyboardType.Phone)
 
             SectionCard("Items") {
-                if (lines.isEmpty()) Text("Abhi koi item nahi", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (lines.isEmpty()) Text("Abhi koi item nahi", color = ios.secondaryLabel)
                 lines.forEachIndexed { i, l ->
                     Row(Modifier.fillMaxWidth().clickable { lineDialog = i }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -203,9 +227,9 @@ fun InvoiceCreateScreen(nav: Nav) {
                             Text("${money(l.qty)} x ${rupees(l.rate)}", style = MaterialTheme.typography.bodySmall)
                         }
                         Text(rupees(l.qty * l.rate), fontWeight = FontWeight.Bold)
-                        IconButton(onClick = { lines.removeAt(i) }) { Icon(Icons.Filled.Close, "Hatao") }
+                        IconButton(onClick = { lines.removeAt(i) }) { Icon(Icons.Filled.RemoveCircle, "Hatao", tint = IosRed) }
                     }
-                    HorizontalDivider()
+                    Hairline()
                 }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = { lineDialog = -1 }, modifier = Modifier.fillMaxWidth()) {
@@ -232,10 +256,10 @@ fun InvoiceCreateScreen(nav: Nav) {
 
             SectionCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Paisa mil gaya (Paid)", Modifier.weight(1f)); Switch(checked = paid, onCheckedChange = { paid = it })
+                    Text("Paisa mil gaya (Paid)", Modifier.weight(1f)); IosSwitch(checked = paid, onCheckedChange = { paid = it })
                 }
                 if (lines.any { it.itemId != null }) Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Stock se ghatao", Modifier.weight(1f)); Switch(checked = reduceStock, onCheckedChange = { reduceStock = it })
+                    Text("Stock se ghatao", Modifier.weight(1f)); IosSwitch(checked = reduceStock, onCheckedChange = { reduceStock = it })
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -244,7 +268,7 @@ fun InvoiceCreateScreen(nav: Nav) {
                         else "Khata me jodne ke liye upar se party chunein",
                         Modifier.weight(1f)
                     )
-                    Switch(checked = toBooks, onCheckedChange = { toBooks = it }, enabled = paid || partyId != null)
+                    IosSwitch(checked = toBooks, onCheckedChange = { toBooks = it }, enabled = paid || partyId != null)
                 }
             }
             err?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -253,21 +277,23 @@ fun InvoiceCreateScreen(nav: Nav) {
     }
 
     if (pickParty) {
-        AlertDialog(
+        IosAlert(
             onDismissRequest = { pickParty = false },
             title = { Text("Party chunein") },
             text = {
                 if (parties.isEmpty()) Text("Khata me abhi koi party nahi hai. Naam seedha likh dein.")
                 else LazyColumn(Modifier.heightIn(max = 400.dp)) {
                     items(parties) { p ->
-                        ListItem(
-                            headlineContent = { Text(p.name) },
-                            supportingContent = { Text(p.phone) },
-                            leadingContent = { Avatar(p.name) },
-                            modifier = Modifier.clickable {
-                                partyName = p.name; phone = p.phone; partyId = p.id; pickParty = false
+                        Row(Modifier.fillMaxWidth().clickable {
+                            partyName = p.name; phone = p.phone; partyId = p.id; pickParty = false
+                        }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            PartyAvatar(p.id, p.name, 36.dp)
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(p.name, fontSize = 16.sp, color = ios.label, textAlign = TextAlign.Start)
+                                if (p.phone.isNotBlank()) Text(p.phone, fontSize = 13.sp, color = ios.secondaryLabel, textAlign = TextAlign.Start)
                             }
-                        )
+                        }
                     }
                 }
             },
@@ -282,7 +308,7 @@ fun InvoiceCreateScreen(nav: Nav) {
         var rate by remember(idx) { mutableStateOf(ex?.rate?.plain() ?: "") }
         var itemId by remember(idx) { mutableStateOf(ex?.itemId) }
         var showStock by remember(idx) { mutableStateOf(false) }
-        AlertDialog(
+        IosSheet(
             onDismissRequest = { lineDialog = null },
             title = { Text(if (ex == null) "Item jodein" else "Item badlein") },
             text = {
@@ -312,20 +338,21 @@ fun InvoiceCreateScreen(nav: Nav) {
                     val d = LineDraft(name.trim(), qty.toAmount().takeIf { it > 0 } ?: 1.0, rate.toAmount(), itemId)
                     if (ex == null) lines.add(d) else lines[idx] = d
                     lineDialog = null
-                }) { Text("OK") }
+                }) { Text("OK", fontSize = 17.sp, fontWeight = FontWeight.SemiBold) }
             },
-            dismissButton = { TextButton(onClick = { lineDialog = null }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { lineDialog = null }) { Text("Cancel", fontSize = 17.sp) } }
         )
     }
 
-    saved?.let { inv ->
-        AlertDialog(
+    sharedSaved?.let { inv -> InvoiceShareSheet(inv) { sharedSaved = null; saved = null; nav.back() } }
+    if (sharedSaved == null) saved?.let { inv ->
+        IosAlert(
             onDismissRequest = { saved = null; nav.back() },
-            icon = { Icon(Icons.Filled.CheckCircle, null, tint = GotGreen) },
+            icon = { Icon(Icons.Filled.CheckCircle, null, tint = GotGreen, modifier = Modifier.size(44.dp)) },
             title = { Text("Bill save ho gaya ✓") },
             text = { Text("${inv.number} • ${rupees(inv.total)}\nPDF bana kar WhatsApp par bhej sakte hain.") },
             confirmButton = {
-                TextButton(onClick = { shareInvoicePdf(ctx, inv); saved = null; nav.back() }) { Text("PDF Share") }
+                TextButton(onClick = { sharedSaved = inv }) { Text("PDF bhejein", fontSize = 17.sp, fontWeight = FontWeight.SemiBold) }
             },
             dismissButton = { TextButton(onClick = { saved = null; nav.back() }) { Text("Done") } }
         )

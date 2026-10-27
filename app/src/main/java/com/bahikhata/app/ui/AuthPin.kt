@@ -3,6 +3,10 @@
 package com.bahikhata.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -67,11 +71,9 @@ fun AuthScreen(firstLaunch: Boolean, onDone: () -> Unit) {
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            if (!firstLaunch) TopAppBar(
-                title = { Text("Cloud Account") },
-                navigationIcon = { IconButton(onClick = onDone) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
-            )
+            if (!firstLaunch) IosNavBar("Cloud Account", backLabel = "Settings", onBack = onDone)
         }
     ) { pad ->
         Column(
@@ -80,15 +82,15 @@ fun AuthScreen(firstLaunch: Boolean, onDone: () -> Unit) {
         ) {
             Spacer(Modifier.height(if (firstLaunch) 32.dp else 8.dp))
             Box(
-                Modifier.size(84.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
+                Modifier.size(88.dp).clip(RoundedCornerShape(20.dp)).background(ios.tint),
                 contentAlignment = Alignment.Center
-            ) { Icon(Icons.Filled.MenuBook, null, Modifier.size(44.dp), tint = MaterialTheme.colorScheme.primary) }
+            ) { Icon(Icons.AutoMirrored.Filled.MenuBook, null, Modifier.size(48.dp), tint = Color.White) }
             Spacer(Modifier.height(16.dp))
-            Text("BahiKhata Pro", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text("BahiKhata Pro", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = ios.label)
             Text(
                 "Login karein — phone badlein ya app dobara install karein, data wapas mil jayega",
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                textAlign = TextAlign.Center, fontSize = 15.sp,
+                color = ios.secondaryLabel
             )
             Spacer(Modifier.height(24.dp))
 
@@ -125,34 +127,26 @@ fun AuthScreen(firstLaunch: Boolean, onDone: () -> Unit) {
                 SegmentedButtonRowCompat(signup) { signup = it; msg = null }
             }
             Spacer(Modifier.height(16.dp))
-            OutlinedTextField(
-                value = email, onValueChange = { email = it.trim() }, label = { Text("Email") },
-                leadingIcon = { Icon(Icons.Filled.Email, null) }, singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = pass, onValueChange = { pass = it }, label = { Text("Password") },
-                leadingIcon = { Icon(Icons.Filled.Lock, null) }, singleLine = true,
-                visualTransformation = if (showPass) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton(onClick = { showPass = !showPass }) {
-                        Icon(if (showPass) Icons.Filled.VisibilityOff else Icons.Filled.Visibility, "Dikhao")
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(ios.cell)) {
+                CompositionLocalProvider(LocalOnCell provides false) {
+                    AuthRow(Icons.Filled.Email) {
+                        IosField(email, { email = it.trim() }, "", placeholder = "Email", keyboard = KeyboardType.Email)
                     }
-                },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                modifier = Modifier.fillMaxWidth()
-            )
-            if (signup) {
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = pass2, onValueChange = { pass2 = it }, label = { Text("Password dobara") },
-                    leadingIcon = { Icon(Icons.Filled.Lock, null) }, singleLine = true,
-                    visualTransformation = if (showPass) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                    Hairline(start = 48.dp)
+                    AuthRow(Icons.Filled.Lock) {
+                        IosField(pass, { pass = it }, "", placeholder = "Password", keyboard = KeyboardType.Password, password = !showPass,
+                            trailing = {
+                                Icon(if (showPass) Icons.Filled.VisibilityOff else Icons.Filled.Visibility, "Dikhao", tint = ios.gray,
+                                    modifier = Modifier.size(22.dp).clickable { showPass = !showPass })
+                            })
+                    }
+                    if (signup) {
+                        Hairline(start = 48.dp)
+                        AuthRow(Icons.Filled.Lock) {
+                            IosField(pass2, { pass2 = it }, "", placeholder = "Password dobara", keyboard = KeyboardType.Password, password = !showPass)
+                        }
+                    }
+                }
             }
             msg?.let {
                 Spacer(Modifier.height(10.dp))
@@ -209,7 +203,7 @@ fun AuthScreen(firstLaunch: Boolean, onDone: () -> Unit) {
     }
 
     if (askRestore) {
-        AlertDialog(
+        IosAlert(
             onDismissRequest = {},
             title = { Text("Cloud me purana data mila") },
             text = { Text("Is phone me bhi kuch data hai. Kya karein?\n\n• Cloud se laayein: phone ka data hat kar cloud wala aa jayega.\n• Phone wala rakhein: cloud par is phone ka data save hoga.") },
@@ -222,13 +216,13 @@ fun AuthScreen(firstLaunch: Boolean, onDone: () -> Unit) {
                         busy = false
                         if (err != null) msg = err else finish()
                     }
-                }) { Text("Cloud se laayein") }
+                }) { Text("Cloud se laayein", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
             },
             dismissButton = {
                 TextButton(onClick = {
                     askRestore = false
                     scope.launch { busy = true; Cloud.push(); busy = false; finish() }
-                }) { Text("Phone wala rakhein") }
+                }) { Text("Phone wala rakhein", fontSize = 15.sp) }
             }
         )
     }
@@ -236,9 +230,19 @@ fun AuthScreen(firstLaunch: Boolean, onDone: () -> Unit) {
 
 @Composable
 private fun SegmentedButtonRowCompat(signup: Boolean, onChange: (Boolean) -> Unit) {
-    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-        SegmentedButton(selected = !signup, onClick = { onChange(false) }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("Login") }
-        SegmentedButton(selected = signup, onClick = { onChange(true) }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("Signup") }
+    IosSegmented(listOf("Login", "Signup"), if (signup) "Signup" else "Login", { onChange(it == "Signup") })
+}
+
+@Composable
+private fun AuthRow(icon: androidx.compose.ui.graphics.vector.ImageVector, content: @Composable () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = ios.gray, modifier = Modifier.size(20.dp))
+        Box(Modifier.weight(1f)) {
+            CompositionLocalProvider(LocalOnCell provides false) {
+                // the field draws on the cell colour itself
+                CompositionLocalProvider(LocalIos provides ios.copy(sheetCell = ios.cell)) { content() }
+            }
+        }
     }
 }
 
@@ -265,18 +269,18 @@ fun PinScreen(pin: String, onUnlock: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Icon(Icons.Filled.Lock, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Filled.Lock, null, Modifier.size(40.dp), tint = ios.label)
             Spacer(Modifier.height(12.dp))
-            Text(Repo.businessName(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(Repo.businessName(), fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = ios.label)
             Text(if (error) "Galat PIN, dobara daalein" else "PIN daalein",
                 color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(24.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 repeat(pin.length) { i ->
                     Box(
-                        Modifier.size(18.dp).clip(CircleShape)
-                            .background(if (i < entered.length) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface)
-                            .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                        Modifier.size(14.dp).clip(CircleShape)
+                            .background(if (i < entered.length) ios.label else Color.Transparent)
+                            .border(1.5.dp, ios.label, CircleShape)
                     )
                 }
             }
@@ -286,12 +290,12 @@ fun PinScreen(pin: String, onUnlock: () -> Unit) {
                 Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                     r.forEach { k ->
                         if (k.isEmpty()) Spacer(Modifier.size(72.dp)) else
-                            FilledTonalButton(
-                                onClick = { if (k == "⌫") entered = entered.dropLast(1) else press(k) },
-                                modifier = Modifier.size(72.dp),
-                                shape = CircleShape,
-                                contentPadding = PaddingValues(0.dp)
-                            ) { Text(k, fontSize = 24.sp) }
+                            Box(
+                                Modifier.size(78.dp).clip(CircleShape)
+                                    .background(if (k == "⌫") Color.Transparent else ios.fill)
+                                    .clickable { if (k == "⌫") entered = entered.dropLast(1) else press(k) },
+                                contentAlignment = Alignment.Center
+                            ) { Text(k, fontSize = if (k == "⌫") 22.sp else 34.sp, fontWeight = FontWeight.Light, color = ios.label) }
                     }
                 }
                 Spacer(Modifier.height(14.dp))
@@ -303,7 +307,7 @@ fun PinScreen(pin: String, onUnlock: () -> Unit) {
     if (forgot) {
         var pass by remember { mutableStateOf("") }
         var msg by remember { mutableStateOf<String?>(null) }
-        AlertDialog(
+        IosAlert(
             onDismissRequest = { forgot = false },
             title = { Text("PIN bhool gaye") },
             text = {
@@ -311,11 +315,7 @@ fun PinScreen(pin: String, onUnlock: () -> Unit) {
                     if (Cloud.uid != null) {
                         Text("Apne cloud account (${Cloud.email}) ka password daalein. PIN hat jayega.")
                         Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = pass, onValueChange = { pass = it }, singleLine = true,
-                            label = { Text("Password") },
-                            visualTransformation = PasswordVisualTransformation()
-                        )
+                        IosField(pass, { pass = it }, "", placeholder = "Password", password = true, keyboard = KeyboardType.Password)
                         msg?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     } else {
                         Text("Cloud login nahi hai, isliye PIN reset nahi ho sakta. Phone Settings → Apps → BahiKhata Pro → Storage → Clear data karne se PIN hatega (saara data bhi hat jayega, backup ho to restore karein).")

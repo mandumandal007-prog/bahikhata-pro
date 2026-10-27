@@ -1,72 +1,55 @@
 package com.bahikhata.app.ui
 
 import android.app.Activity
+import android.graphics.Typeface
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import com.bahikhata.app.data.Repo
+import com.bahikhata.app.util.UiPrefs
 
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF2E5BFF),
-    onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFDDE3FF),
-    onPrimaryContainer = Color(0xFF00174B),
-    secondary = Color(0xFF00696E),
-    onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFF9CF1F6),
-    onSecondaryContainer = Color(0xFF002021),
-    tertiary = Color(0xFF7A5900),
-    onTertiary = Color(0xFFFFFFFF),
-    tertiaryContainer = Color(0xFFFFDF9B),
-    onTertiaryContainer = Color(0xFF261A00),
-    background = Color(0xFFF7F8FC),
-    onBackground = Color(0xFF1A1C1E),
-    surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF1A1C1E),
-    surfaceVariant = Color(0xFFE3E6EF),
-    onSurfaceVariant = Color(0xFF44474F),
-    error = Color(0xFFBA1A1A),
-    onError = Color(0xFFFFFFFF),
-    errorContainer = Color(0xFFFFDAD6),
-    onErrorContainer = Color(0xFF410002)
-)
+private fun fontFamily(style: String): FontFamily = when (style) {
+    "serif" -> FontFamily.Serif
+    "mono" -> FontFamily.Monospace
+    "condensed" -> FontFamily(Typeface.create("sans-serif-condensed", Typeface.NORMAL))
+    else -> FontFamily.Default
+}
 
-private val DarkColors = darkColorScheme(
-    primary = Color(0xFFB6C4FF),
-    onPrimary = Color(0xFF002A78),
-    primaryContainer = Color(0xFF1F3FA8),
-    onPrimaryContainer = Color(0xFFDDE3FF),
-    secondary = Color(0xFF80D4DA),
-    onSecondary = Color(0xFF003739),
-    secondaryContainer = Color(0xFF004F53),
-    onSecondaryContainer = Color(0xFF9CF1F6),
-    tertiary = Color(0xFFF2C048),
-    onTertiary = Color(0xFF402D00),
-    tertiaryContainer = Color(0xFF5C4200),
-    onTertiaryContainer = Color(0xFFFFDF9B),
-    background = Color(0xFF111318),
-    onBackground = Color(0xFFE2E2E6),
-    surface = Color(0xFF1A1C21),
-    onSurface = Color(0xFFE2E2E6),
-    surfaceVariant = Color(0xFF44474F),
-    onSurfaceVariant = Color(0xFFC5C6D0),
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005),
-    errorContainer = Color(0xFF93000A),
-    onErrorContainer = Color(0xFFFFDAD6)
-)
+private fun iosTypography(ff: FontFamily): Typography {
+    fun s(size: Int, w: FontWeight = FontWeight.Normal, ls: Double = -0.2, lh: Int = (size * 1.3).toInt()) =
+        TextStyle(fontFamily = ff, fontSize = size.sp, fontWeight = w, letterSpacing = ls.sp, lineHeight = lh.sp)
+    return Typography(
+        displayLarge = s(40, FontWeight.Bold), displayMedium = s(36, FontWeight.Bold), displaySmall = s(34, FontWeight.Bold),
+        headlineLarge = s(34, FontWeight.Bold, 0.2), headlineMedium = s(28, FontWeight.Bold, 0.2), headlineSmall = s(22, FontWeight.Bold),
+        titleLarge = s(20, FontWeight.SemiBold), titleMedium = s(17, FontWeight.SemiBold), titleSmall = s(15, FontWeight.SemiBold),
+        bodyLarge = s(17), bodyMedium = s(15), bodySmall = s(13, ls = -0.08),
+        labelLarge = s(15, FontWeight.Medium), labelMedium = s(13, ls = -0.08), labelSmall = s(11, ls = 0.06)
+    )
+}
 
-/** theme setting: "system" | "light" | "dark"; dynamic setting: "1" to use Material You colors. */
+/** theme setting: "system" | "light" | "dark"; dynamic setting: "1" to use the wallpaper colour as tint. */
 @Composable
 fun BahiTheme(content: @Composable () -> Unit) {
     @Suppress("UNUSED_VARIABLE") val t = Repo.tick
@@ -78,12 +61,31 @@ fun BahiTheme(content: @Composable () -> Unit) {
     }
     val dynamic = Repo.setting("dynamic", "0") == "1" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val ctx = LocalContext.current
-    val colors = when {
-        dynamic && dark -> dynamicDarkColorScheme(ctx)
-        dynamic -> dynamicLightColorScheme(ctx)
-        dark -> DarkColors
-        else -> LightColors
-    }
+    val tint = if (dynamic) (if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)).primary
+    else accentColor(UiPrefs.accent, dark)
+    val c = iosColors(dark, tint)
+    val container = tint.copy(alpha = 0.15f).compositeOver(c.cell)
+    val colors = if (dark) darkColorScheme(
+        primary = tint, onPrimary = Color.White, primaryContainer = container, onPrimaryContainer = tint,
+        secondary = tint, onSecondary = Color.White, secondaryContainer = Color(0xFF3A3A3C), onSecondaryContainer = Color.White,
+        tertiary = Color(0xFFFF9F0A), onTertiary = Color.Black, tertiaryContainer = Color(0xFF3A2A10), onTertiaryContainer = Color(0xFFFF9F0A),
+        background = c.groupedBg, onBackground = Color.White, surface = c.cell, onSurface = Color.White,
+        surfaceVariant = Color(0xFF2C2C2E), onSurfaceVariant = Color(0xFF98989F), surfaceTint = Color.Transparent,
+        surfaceContainerLowest = Color.Black, surfaceContainerLow = c.cell, surfaceContainer = c.cell,
+        surfaceContainerHigh = Color(0xFF2C2C2E), surfaceContainerHighest = Color(0xFF3A3A3C),
+        outline = Color(0xFF545458), outlineVariant = c.separator,
+        error = Color(0xFFFF453A), onError = Color.White, errorContainer = Color(0xFF3B1513), onErrorContainer = Color(0xFFFF453A)
+    ) else lightColorScheme(
+        primary = tint, onPrimary = Color.White, primaryContainer = container, onPrimaryContainer = tint,
+        secondary = tint, onSecondary = Color.White, secondaryContainer = Color(0xFFE5E5EA), onSecondaryContainer = Color.Black,
+        tertiary = Color(0xFFFF9500), onTertiary = Color.White, tertiaryContainer = Color(0xFFFFF0DB), onTertiaryContainer = Color(0xFF8A4F00),
+        background = c.groupedBg, onBackground = Color.Black, surface = c.cell, onSurface = Color.Black,
+        surfaceVariant = Color(0xFFE5E5EA), onSurfaceVariant = Color(0xFF8A8A8E), surfaceTint = Color.Transparent,
+        surfaceContainerLowest = Color.White, surfaceContainerLow = Color.White, surfaceContainer = Color.White,
+        surfaceContainerHigh = Color.White, surfaceContainerHighest = Color(0xFFE5E5EA),
+        outline = Color(0xFFC6C6C8), outlineVariant = Color(0xFFE5E5EA),
+        error = Color(0xFFFF3B30), onError = Color.White, errorContainer = Color(0xFFFFE5E3), onErrorContainer = Color(0xFFD70015)
+    )
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
@@ -93,5 +95,15 @@ fun BahiTheme(content: @Composable () -> Unit) {
             ctrl.isAppearanceLightNavigationBars = !dark
         }
     }
-    MaterialTheme(colorScheme = colors, content = content)
+    val shapes = Shapes(
+        extraSmall = RoundedCornerShape(10.dp), small = RoundedCornerShape(10.dp), medium = RoundedCornerShape(12.dp),
+        large = RoundedCornerShape(14.dp), extraLarge = RoundedCornerShape(14.dp)
+    )
+    val d = LocalDensity.current
+    CompositionLocalProvider(
+        LocalIos provides c,
+        LocalDensity provides Density(d.density, d.fontScale * UiPrefs.textScale)
+    ) {
+        MaterialTheme(colorScheme = colors, typography = iosTypography(fontFamily(UiPrefs.fontStyle)), shapes = shapes, content = content)
+    }
 }

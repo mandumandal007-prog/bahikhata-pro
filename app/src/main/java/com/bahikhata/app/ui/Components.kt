@@ -12,6 +12,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.ui.unit.sp
+import com.bahikhata.app.util.UiPrefs
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,8 +30,8 @@ import com.bahikhata.app.util.fmtDate
 import java.util.Calendar
 import java.util.TimeZone
 
-val GaveRed = Color(0xFFD32F2F)
-val GotGreen = Color(0xFF2E7D32)
+val GaveRed = Color(0xFFFF3B30)
+val GotGreen = Color(0xFF34C759)
 
 val PAY_MODES = listOf("CASH", "UPI", "BANK", "CARD", "CHEQUE")
 
@@ -46,16 +49,9 @@ fun NumField(
     suffix: String? = null,
     prefix: String? = null
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = { v -> onChange(v.filter { it.isDigit() || it == '.' }) },
-        label = { Text(label) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-        suffix = suffix?.let { { Text(it) } },
-        prefix = prefix?.let { { Text(it) } },
-        modifier = modifier
-    )
+    IosField(value, { v -> onChange(v.filter { it.isDigit() || it == '.' }) }, label, modifier,
+        keyboard = KeyboardType.Decimal, prefix = prefix?.let { if (it == "₹") com.bahikhata.app.util.NumFmt.symbol else it }, suffix = suffix,
+        placeholder = "0")
 }
 
 @Composable
@@ -67,14 +63,7 @@ fun TxtField(
     keyboard: KeyboardType = KeyboardType.Text,
     singleLine: Boolean = true
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        label = { Text(label) },
-        singleLine = singleLine,
-        keyboardOptions = KeyboardOptions(keyboardType = keyboard),
-        modifier = modifier
-    )
+    IosField(value, onChange, label, modifier, keyboard = keyboard, singleLine = singleLine)
 }
 
 /** Converts a DatePicker UTC-midnight value to local time (keeping the current time of day). */
@@ -105,16 +94,20 @@ fun DateField(
     clearable: Boolean = false
 ) {
     var open by remember { mutableStateOf(false) }
-    OutlinedCard(onClick = { open = true }, modifier = modifier.fillMaxWidth()) {
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.CalendarMonth, null, tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(millis?.let { fmtDate(it) } ?: "Select karein", style = MaterialTheme.typography.bodyLarge)
-            }
+    val bg = if (LocalOnCell.current) ios.fieldOnCell else ios.sheetCell
+    Column(modifier.fillMaxWidth()) {
+        Text(label, fontSize = 13.sp, color = ios.secondaryLabel, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp), maxLines = 1)
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedCornerShape(10.dp)).background(bg).clickable { open = true }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Outlined.CalendarMonth, null, tint = ios.tint, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(millis?.let { fmtDate(it) } ?: "Select karein", Modifier.weight(1f), fontSize = 17.sp,
+                color = if (millis != null) ios.tint else ios.tertiaryLabel, maxLines = 1)
             if (clearable && millis != null) {
-                IconButton(onClick = { onChange(null) }) { Icon(Icons.Filled.Close, "Hatao") }
+                Icon(Icons.Filled.Cancel, "Hatao", tint = ios.tertiaryLabel, modifier = Modifier.size(20.dp).clip(CircleShape).clickable { onChange(null) })
             }
         }
     }
@@ -135,44 +128,36 @@ fun DateField(
 
 @Composable
 fun ChipsRow(options: List<String>, selected: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
-    Row(modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        options.forEach { o ->
-            FilterChip(selected = o == selected, onClick = { onSelect(o) }, label = { Text(o) })
-        }
-    }
+    val maxLen = options.maxOfOrNull { it.length } ?: 0
+    val segmented = (options.size <= 3 && maxLen <= 16) || (options.size <= 5 && maxLen <= 4) || (options.size == 4 && maxLen <= 8)
+    if (segmented) IosSegmented(options, selected, onSelect, modifier)
+    else IosPills(options, selected, onSelect, modifier)
 }
 
 @Composable
-fun Avatar(name: String, color: Color = MaterialTheme.colorScheme.primaryContainer) {
-    Box(
-        Modifier.size(42.dp).clip(CircleShape).background(color),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            name.trim().take(1).uppercase().ifEmpty { "?" },
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onPrimaryContainer
-        )
-    }
+fun Avatar(name: String, color: Color = Color.Unspecified) {
+    InitialsAvatar(name, 40.dp)
 }
 
 @Composable
 fun StatBox(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
-    Column(modifier.padding(4.dp)) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(value, style = MaterialTheme.typography.titleLarge, color = color, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    var reveal by remember { mutableStateOf(false) }
+    val hidden = UiPrefs.hideAmounts && !reveal && value.any { it.isDigit() } && value.startsWith(com.bahikhata.app.util.NumFmt.symbol)
+    Column(modifier.padding(4.dp).then(if (UiPrefs.hideAmounts) Modifier.clickable { reveal = !reveal } else Modifier)) {
+        Text(label, fontSize = 13.sp, color = ios.secondaryLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(if (hidden) com.bahikhata.app.util.NumFmt.symbol + " ••••" else value, fontSize = 21.sp, color = color,
+            fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, letterSpacing = (-0.3).sp)
     }
 }
 
+/** iOS inset-grouped section: small caps header outside, rounded white card inside. */
 @Composable
 fun SectionCard(title: String? = null, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    ElevatedCard(modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
-        Column(Modifier.padding(16.dp)) {
-            if (title != null) {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(10.dp))
-            }
-            content()
+    Column(modifier.fillMaxWidth()) {
+        if (title != null) Text(title.uppercase(), Modifier.padding(start = 16.dp, bottom = 6.dp, top = 4.dp), fontSize = 13.sp,
+            color = ios.secondaryLabel, maxLines = 2)
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(ios.cell).padding(16.dp)) {
+            CompositionLocalProvider(LocalOnCell provides true) { content() }
         }
     }
 }
@@ -183,9 +168,9 @@ fun EmptyState(icon: ImageVector, text: String, modifier: Modifier = Modifier) {
         modifier.fillMaxWidth().padding(40.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(icon, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.outline)
+        Icon(icon, null, Modifier.size(52.dp), tint = ios.tertiaryLabel)
         Spacer(Modifier.height(12.dp))
-        Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
+        Text(text, color = ios.secondaryLabel, style = MaterialTheme.typography.bodyLarge, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
@@ -198,23 +183,23 @@ fun ConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    IosAlert(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { Text(text) },
         confirmButton = {
             TextButton(onClick = { onConfirm(); onDismiss() }) {
-                Text(confirmLabel, color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                Text(confirmLabel, color = if (danger) IosRed else ios.tint, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", fontSize = 17.sp) } }
     )
 }
 
 @Composable
 fun KeyValue(label: String, value: String, bold: Boolean = false, color: Color = Color.Unspecified) {
     Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-        Text(label, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, Modifier.weight(1f), color = ios.secondaryLabel)
         Text(value, fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal, color = color)
     }
 }
@@ -232,15 +217,15 @@ fun BigButton(text: String, color: Color, modifier: Modifier = Modifier, onClick
 @Composable
 fun ClickRow(icon: ImageVector, title: String, subtitle: String? = null, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(vertical = 12.dp, horizontal = 4.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.width(14.dp))
+        IconTile(icon, ios.tint)
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(title, fontSize = 17.sp, color = ios.label)
+            if (subtitle != null) Text(subtitle, fontSize = 13.sp, color = ios.secondaryLabel)
         }
-        Icon(Icons.Filled.ChevronRight, null, tint = MaterialTheme.colorScheme.outline)
+        Chevron()
     }
 }
