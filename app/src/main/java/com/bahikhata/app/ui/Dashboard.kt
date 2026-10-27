@@ -235,6 +235,7 @@ fun TrendChart(d: TrendData, aName: String, bName: String) {
     val grid = ios.separator
     val selBg = ios.fill
     val n = d.labels.size
+    if (n == 0 || d.a.size < n || d.b.size < n) return
     Column {
         val si = sel.coerceIn(0, n - 1)
         Row(verticalAlignment = Alignment.CenterVertically) {

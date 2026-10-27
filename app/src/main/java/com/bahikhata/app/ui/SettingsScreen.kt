@@ -40,6 +40,7 @@ import com.bahikhata.app.data.Repo
 import com.bahikhata.app.util.PartyPhotos
 import com.bahikhata.app.util.fmtDateTime
 import com.bahikhata.app.util.shareFile
+import com.bahikhata.app.util.shareText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -320,6 +321,18 @@ fun SettingsScreen(nav: Nav) {
                 Text("Saara data delete karein", Modifier.weight(1f), fontSize = 17.sp, color = IosRed, textAlign = TextAlign.Center)
             }
             SectionFooter("Parties, entries, cashbook, stock, bills — sab hat jayega.")
+
+            Spacer(Modifier.height(24.dp))
+            GroupCell(0, 1, onClick = {
+                shareText(ctx, "Main apna hisaab-kitaab BahiKhata Pro app me rakhta hoon — khata, bill, cashbook, sab ek jagah. Aap bhi try karein 🙏")
+            }) {
+                IconTile(Icons.Filled.Share, IosBlue); Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("App share karein", fontSize = 17.sp, color = ios.label)
+                    Text("Doston ko BahiKhata Pro batayein", fontSize = 12.sp, color = ios.secondaryLabel)
+                }
+                Chevron()
+            }
 
             Spacer(Modifier.height(20.dp))
             Text("BahiKhata Pro v${BuildConfig.VERSION_NAME}", Modifier.align(Alignment.CenterHorizontally),

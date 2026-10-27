@@ -199,6 +199,8 @@ fun KhataScreen(nav: Nav) {
                     query.isNotBlank() -> EmptyHint(Icons.Outlined.Search, "\"$query\" nahi mila",
                         "Naam, phone ya rakam se dhoondh sakte hain. Naya banana hai?", "\"$query\" ko jodein") { adding = true }
                     bal == "Due nikli" -> EmptyHint(Icons.Outlined.CheckCircle, "Kisi ki due nahi nikli 🎉", "Sab time par hai. Entry me due date daalne se yahan dikhega.")
+                    bal == "Lena hai" -> EmptyHint(Icons.Outlined.CheckCircle, "Sab hisaab saaf 🎉", "Abhi kisi se paise lena baaki nahi. Badhiya!")
+                    bal == "Dena hai" -> EmptyHint(Icons.Outlined.CheckCircle, "Kisi ka dena baaki nahi 🎉", "Aapne sabka hisaab chuka diya hai.")
                     bal == "Barabar" -> EmptyHint(Icons.Outlined.CheckCircle, "Koi hisaab barabar nahi", "Jiska lena-dena zero ho jata hai, woh yahan dikhta hai.")
                     else -> EmptyHint(Icons.Outlined.FilterList, "Is filter me koi nahi", "Upar doosra filter chunein ya 'Sab' dabayein.", "Sab dikhayein") { bal = "Sab"; filter = "Sab" }
                 }

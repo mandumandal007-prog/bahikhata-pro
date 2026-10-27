@@ -35,7 +35,16 @@ val GotGreen = Color(0xFF34C759)
 
 val PAY_MODES = listOf("CASH", "UPI", "BANK", "CARD", "CHEQUE")
 
-fun String.toAmount(): Double = this.replace(",", "").replace("₹", "").trim().toDoubleOrNull() ?: 0.0
+fun String.toAmount(): Double = this.replace(",", "").replace("₹", "").trim().toDoubleOrNull()
+    ?.takeIf { it.isFinite() && it >= 0.0 && it < 1_000_000_000_000.0 } ?: 0.0
+
+/** Keeps only a clean amount: digits, one dot, 2 decimals, at most 11 digits before the dot. */
+fun cleanAmountInput(v: String): String {
+    val f = v.filter { it.isDigit() || it == '.' }
+    val dot = f.indexOf('.')
+    return if (dot < 0) f.take(11)
+    else f.substring(0, dot).take(11) + "." + f.substring(dot + 1).replace(".", "").take(2)
+}
 
 fun Double.plain(): String =
     if (this == 0.0) "" else if (this % 1.0 == 0.0) this.toLong().toString() else this.toString()
@@ -49,7 +58,7 @@ fun NumField(
     suffix: String? = null,
     prefix: String? = null
 ) {
-    IosField(value, { v -> onChange(v.filter { it.isDigit() || it == '.' }) }, label, modifier,
+    IosField(value, { v -> onChange(cleanAmountInput(v)) }, label, modifier,
         keyboard = KeyboardType.Decimal, prefix = prefix?.let { if (it == "₹") com.bahikhata.app.util.NumFmt.symbol else it }, suffix = suffix,
         placeholder = "0")
 }
