@@ -97,8 +97,9 @@ fun AppRoot() {
 
     // Auto cloud sync: a few seconds after any change.
     val uid = Cloud.uid
-    LaunchedEffect(tick, uid) {
-        if (uid != null && Cloud.configured) {
+    val authFlow = Cloud.authFlow
+    LaunchedEffect(tick, uid, authFlow) {
+        if (uid != null && Cloud.configured && !authFlow) {
             delay(3000)
             Cloud.push()
         }

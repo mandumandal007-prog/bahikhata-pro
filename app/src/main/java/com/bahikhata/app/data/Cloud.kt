@@ -56,11 +56,15 @@ object Cloud {
     var syncing by mutableStateOf(false)
         private set
 
+    /** True while the login screen is deciding cloud-vs-phone data; auto-sync waits meanwhile. */
+    var authFlow by mutableStateOf(false)
+
     private lateinit var prefs: SharedPreferences
     private val mutex = Mutex()
 
     fun init(ctx: Context) {
         prefs = ctx.applicationContext.getSharedPreferences("cloud_sync", Context.MODE_PRIVATE)
+        PhotoCloud.init(ctx)
         lastSync = prefs.getLong("last_sync", 0L)
         if (BuildConfig.FB_API_KEY.isBlank() || BuildConfig.FB_APP_ID.isBlank() || BuildConfig.FB_PROJECT_ID.isBlank()) {
             configured = false
@@ -156,6 +160,7 @@ object Cloud {
         if (configured) auth().signOut()
         uid = null
         email = null
+        PhotoCloud.reset()
         prefs.edit().remove("hashes").remove("hash_uid").remove("last_sync").apply()
         lastSync = 0L
         status = ""
@@ -216,12 +221,21 @@ object Cloud {
     suspend fun push(): Boolean {
         val id = uid ?: return false
         if (!configured) return false
+        return pushData(id).also { PhotoCloud.kick() }
+    }
+
+    private suspend fun pushData(id: String): Boolean {
         return mutex.withLock {
             syncing = true
             try {
                 val snap = withContext(Dispatchers.IO) { localSnapshot() }
                 val old: JSONObject = if (prefs.getString("hash_uid", "") == id)
                     JSONObject(prefs.getString("hashes", "{}") ?: "{}") else JSONObject()
+                // Safety: never upload an empty phone over the cloud copy when this phone has
+                // no sync history for this account (fresh install / login not yet restored).
+                if (old.length() == 0 && withContext(Dispatchers.IO) { localIsEmpty() }) {
+                    return@withLock true
+                }
                 val userDoc = metaDoc(id)
                 val chunksCol = fs().collection("users").document(id).collection("chunks")
                 val newHashes = JSONObject()
@@ -323,6 +337,7 @@ object Cloud {
                 lastSync = System.currentTimeMillis()
                 prefs.edit().putLong("last_sync", lastSync).apply()
                 status = "Cloud se data wapas aa gaya ✓"
+                PhotoCloud.kick(restore = true, overwrite = true)
                 null
             } catch (e: Exception) {
                 cloudError(e).also { status = it }

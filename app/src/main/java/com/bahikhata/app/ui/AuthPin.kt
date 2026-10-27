@@ -47,9 +47,11 @@ fun AuthScreen(firstLaunch: Boolean, onDone: () -> Unit) {
     var askRestore by remember { mutableStateOf(false) }
 
     fun finish() {
+        Cloud.authFlow = false
         Cloud.onboarded = true
         onDone()
     }
+    DisposableEffect(Unit) { onDispose { Cloud.authFlow = false } }
 
     /** After login: decide what to do with cloud vs phone data. */
     suspend fun afterLogin(isNew: Boolean) {
@@ -167,8 +169,9 @@ fun AuthScreen(firstLaunch: Boolean, onDone: () -> Unit) {
                         signup && pass != pass2 -> msg = "Dono password same nahi hain"
                         else -> scope.launch {
                             busy = true
+                            Cloud.authFlow = true
                             val err = if (signup) Cloud.signUp(email, pass) else Cloud.signIn(email, pass)
-                            if (err != null) msg = err else afterLogin(signup)
+                            if (err != null) { msg = err; Cloud.authFlow = false } else afterLogin(signup)
                             busy = false
                         }
                     }

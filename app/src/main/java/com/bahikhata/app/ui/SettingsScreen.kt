@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import com.bahikhata.app.BuildConfig
 import com.bahikhata.app.data.Cloud
 import com.bahikhata.app.data.Repo
+import com.bahikhata.app.util.PartyPhotos
 import com.bahikhata.app.util.fmtDateTime
 import com.bahikhata.app.util.shareFile
 import kotlinx.coroutines.Dispatchers
@@ -74,7 +75,7 @@ fun SettingsScreen(nav: Nav) {
         if (uri != null) scope.launch {
             val ok = withContext(Dispatchers.IO) {
                 try {
-                    ctx.contentResolver.openOutputStream(uri)?.use { it.write(Repo.exportJson().toString(2).toByteArray()) }
+                    ctx.contentResolver.openOutputStream(uri)?.use { it.write(PartyPhotos.exportWithPhotos(ctx, Repo.exportJson()).toString(2).toByteArray()) }
                     true
                 } catch (e: Exception) { false }
             }
@@ -268,11 +269,17 @@ fun SettingsScreen(nav: Nav) {
                 Chevron()
             }
             GroupCell(1, 3, onClick = {
-                try {
-                    val f = File(ctx.cacheDir, "bahikhata-backup-$stamp.json")
-                    f.writeText(Repo.exportJson().toString(2))
-                    shareFile(ctx, f, "application/json", "Backup bhejein")
-                } catch (e: Exception) { toast("Backup nahi bana") }
+                scope.launch {
+                    try {
+                        val json = Repo.exportJson()
+                        val f = withContext(Dispatchers.IO) {
+                            File(ctx.cacheDir, "bahikhata-backup-$stamp.json").apply {
+                                writeText(PartyPhotos.exportWithPhotos(ctx, json).toString(2))
+                            }
+                        }
+                        shareFile(ctx, f, "application/json", "Backup bhejein")
+                    } catch (e: Exception) { toast("Backup nahi bana") }
+                }
             }, separatorInset = 57.dp) {
                 IconTile(Icons.Filled.Share, IosGreen); Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
@@ -338,7 +345,7 @@ fun SettingsScreen(nav: Nav) {
     }
     restoreJson?.let { obj ->
         ConfirmDialog("Restore karein?", "Abhi ka saara data hat kar backup wala data aa jayega.", "Restore",
-            onConfirm = { toast(if (Repo.importJson(obj)) "Restore ho gaya ✓" else "Restore fail hua") },
+            onConfirm = { val ok = Repo.importJson(obj); if (ok) scope.launch { if (withContext(Dispatchers.IO) { PartyPhotos.restoreFromBackup(ctx, obj) } > 0) PartyPhotos.bumpVersion() }; toast(if (ok) "Restore ho gaya ✓" else "Restore fail hua") },
             onDismiss = { restoreJson = null })
     }
     if (wipe) ConfirmDialog("Saara data delete?", "Yeh wapas nahi aayega" + (if (Cloud.uid != null) " (cloud se bhi hat jayega jab sync hoga)." else "."),
