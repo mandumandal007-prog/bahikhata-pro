@@ -9,6 +9,11 @@
     <!-- only to pick SIM 1 / SIM 2 for SMS on dual-SIM phones (asked when chosen) -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <!-- v1.0.45: daily summary notification (asked only when turned on) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <queries>
+        <intent><action android:name="android.speech.RecognitionService" /></intent>
+    </queries>
 
     <application
         android:allowBackup="true"

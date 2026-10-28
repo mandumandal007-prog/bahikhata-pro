@@ -261,16 +261,41 @@ fun SettingsScreen(nav: Nav) {
             GroupCell(2, 3) {
                 IconTile(Icons.Filled.Lock, IosRed); Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("PIN lock", fontSize = 17.sp, color = ios.label)
+                    Text("App lock (PIN)", fontSize = 17.sp, color = ios.label)
                     Text(if (hasPin) "App kholne par PIN maanga jayega" else "Off", fontSize = 12.sp, color = ios.secondaryLabel)
                 }
                 IosSwitch(hasPin, { on -> if (on) pinDialog = true else { Repo.setSetting("pin", ""); toast("PIN hata diya") } })
             }
             if (hasPin) {
                 Spacer(Modifier.height(8.dp))
-                GroupCell(0, 1, onClick = { pinDialog = true }) {
+                val bioOn = remember(tick) { S.biometric }
+                GroupCell(0, 3) {
+                    IconTile(Icons.Filled.Fingerprint, IosGreen); Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Fingerprint / face unlock", fontSize = 17.sp, color = ios.label)
+                        Text(if (canBiometric(ctx)) "PIN ki jagah finger se kholein" else "Is phone me fingerprint set nahi hai", fontSize = 12.sp, color = ios.secondaryLabel)
+                    }
+                    IosSwitch(bioOn, { on -> S.setB("biometric", on) })
+                }
+                GroupCell(1, 3, onClick = { nav.go(Screen.Prefs("security")) }) {
+                    IconTile(Icons.Filled.LockClock, IosOrange); Spacer(Modifier.width(12.dp))
+                    Text("Kitni der baad lock ho", Modifier.weight(1f), fontSize = 17.sp, color = ios.label); Chevron()
+                }
+                GroupCell(2, 3, onClick = { pinDialog = true }) {
                     Text("PIN badlein", Modifier.weight(1f), fontSize = 17.sp, color = ios.tint); Chevron()
                 }
+                SectionFooter("PIN bhool gaye? Lock screen par \"PIN bhool gaye\" dabayein aur apne login account ka password daalein.")
+            }
+
+            // ---- v1.0.45 business tools
+            SectionHeader("Business tools (naye)")
+            GroupCell(0, 2, onClick = { nav.go(Screen.Pro("hub")) }, separatorInset = 57.dp) {
+                IconTile(Icons.Filled.Apps, IosBlue); Spacer(Modifier.width(12.dp))
+                Text("Sab business tools", Modifier.weight(1f), fontSize = 17.sp, color = ios.label); Chevron()
+            }
+            GroupCell(1, 2, onClick = { nav.go(Screen.Pro("trash")) }) {
+                IconTile(Icons.Filled.DeleteSweep, IosRed); Spacer(Modifier.width(12.dp))
+                Text("Recycle bin (delete hui entry)", Modifier.weight(1f), fontSize = 17.sp, color = ios.label); Chevron()
             }
 
             // ---- backup

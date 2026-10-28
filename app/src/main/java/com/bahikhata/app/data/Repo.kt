@@ -149,6 +149,10 @@ object Repo {
     }
 
     fun deleteParty(id: Long) {
+        try {
+            val rows = rowsJson("parties", "id=?", arrayOf(id.toString())) + rowsJson("entries", "party_id=?", arrayOf(id.toString()))
+            com.bahikhata.app.util.Trash.add("party", "Party: " + (party(id)?.name ?: ""), rows)
+        } catch (_: Throwable) {}
         db.delete("entries", "party_id=?", arrayOf(id.toString()))
         db.delete("parties", "id=?", arrayOf(id.toString()))
         bump()
@@ -180,6 +184,14 @@ object Repo {
     }
 
     fun deleteEntry(id: Long) {
+        try {
+            val rows = rowsJson("entries", "id=?", arrayOf(id.toString()))
+            val o = rows.firstOrNull()
+            if (o != null) {
+                val pn = party(o.optLong("party_id"))?.name ?: ""
+                com.bahikhata.app.util.Trash.add("entry", "Entry: $pn · " + (if (o.optInt("gave") == 1) "Diye " else "Mile ") + com.bahikhata.app.util.rupees(o.optDouble("amount", 0.0)), rows)
+            }
+        } catch (_: Throwable) {}
         db.delete("entries", "id=?", arrayOf(id.toString()))
         bump()
     }
@@ -256,6 +268,10 @@ object Repo {
     }
 
     fun deleteCash(id: Long) {
+        try {
+            val rows = rowsJson("cash", "id=?", arrayOf(id.toString()))
+            rows.firstOrNull()?.let { o -> com.bahikhata.app.util.Trash.add("cash", "Cashbook: " + (if (o.optInt("cash_in") == 1) "Aaya " else "Gaya ") + com.bahikhata.app.util.rupees(o.optDouble("amount", 0.0)) + " · " + o.optString("category"), rows) }
+        } catch (_: Throwable) {}
         db.delete("cash", "id=?", arrayOf(id.toString()))
         bump()
     }
@@ -309,6 +325,10 @@ object Repo {
     }
 
     fun deleteItem(id: Long) {
+        try {
+            val rows = rowsJson("items", "id=?", arrayOf(id.toString()))
+            rows.firstOrNull()?.let { o -> com.bahikhata.app.util.Trash.add("item", "Stock item: " + o.optString("name"), rows) }
+        } catch (_: Throwable) {}
         db.delete("items", "id=?", arrayOf(id.toString()))
         bump()
     }
@@ -468,6 +488,10 @@ object Repo {
     }
 
     fun deleteInvoice(id: Long) {
+        try {
+            val rows = rowsJson("invoices", "id=?", arrayOf(id.toString()))
+            rows.firstOrNull()?.let { o -> com.bahikhata.app.util.Trash.add("bill", "Bill: " + o.optString("number") + " · " + o.optString("party_name"), rows) }
+        } catch (_: Throwable) {}
         db.delete("invoices", "id=?", arrayOf(id.toString()))
         bump()
     }
@@ -733,4 +757,63 @@ object Repo {
         db.delete("invoices", null, null)
         bump()
     }
+
+    // ------------------------------------------------------------ v1.0.45 helpers
+
+    /** Raw rows of a table as JSON (column -> value), used by the recycle bin. */
+    fun rowsJson(table: String, where: String, args: Array<String>): List<JSONObject> {
+        val out = ArrayList<JSONObject>()
+        db.query(table, null, where, args, null, null, null).use { c ->
+            while (c.moveToNext()) {
+                val o = JSONObject()
+                for (i in 0 until c.columnCount) {
+                    val n = c.getColumnName(i)
+                    when (c.getType(i)) {
+                        Cursor.FIELD_TYPE_INTEGER -> o.put(n, c.getLong(i))
+                        Cursor.FIELD_TYPE_FLOAT -> o.put(n, c.getDouble(i))
+                        Cursor.FIELD_TYPE_STRING -> o.put(n, c.getString(i))
+                        else -> o.put(n, JSONObject.NULL)
+                    }
+                }
+                o.put("__table", table)
+                out.add(o)
+            }
+        }
+        return out
+    }
+
+    /** Puts recycle-bin rows back with their old ids (skips a row whose id is taken). */
+    fun restoreRows(rows: List<JSONObject>): Int {
+        var n = 0
+        db.beginTransaction()
+        try {
+            for (o in rows) {
+                val table = o.optString("__table")
+                if (table !in listOf("parties", "entries", "cash", "items", "invoices")) continue
+                val cv = ContentValues()
+                val keys = o.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    if (k == "__table") continue
+                    when (val v = o.get(k)) {
+                        JSONObject.NULL -> cv.putNull(k)
+                        is Int -> cv.put(k, v.toLong())
+                        is Long -> cv.put(k, v)
+                        is Double -> cv.put(k, v)
+                        is Number -> cv.put(k, v.toDouble())
+                        else -> cv.put(k, v.toString())
+                    }
+                }
+                if (db.insertWithOnConflict(table, null, cv, SQLiteDatabase.CONFLICT_IGNORE) != -1L) n++
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+        bump()
+        return n
+    }
+
+    /** "Diye" entries that carry a due date: (partyId, amount, dueDate). */
+    fun dueEntries(): List<Triple<Long, Double, Long>> = query(
+        "SELECT party_id, amount, due_date FROM entries WHERE gave=1 AND due_date IS NOT NULL AND due_date > 0"
+    ) { c -> Triple(c.getLong(0), c.getDouble(1), c.getLong(2)) }
 }

@@ -261,15 +261,34 @@ fun PinScreen(pin: String, onUnlock: () -> Unit) {
     var forgot by remember { mutableStateOf(false) }
 
     val act = LocalContext.current as? android.app.Activity
-    val bio = remember { S.biometric && Build.VERSION.SDK_INT >= 28 }
+    val bio = remember { S.biometric && act != null && canBiometric(act) }
     LaunchedEffect(Unit) { if (bio && act != null) biometricUnlock(act) { onUnlock() } }
 
+    // v1.0.45: 5 galat PIN ke baad 30 second ka wait (attempts survive a restart).
+    var waitLeft by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val until = Repo.setting("pin_block_until", "0").toLongOrNull() ?: 0L
+            waitLeft = ((until - System.currentTimeMillis()) / 1000L).toInt().coerceAtLeast(0)
+            kotlinx.coroutines.delay(500)
+        }
+    }
+
     fun press(d: String) {
+        if (waitLeft > 0) return
         if (entered.length >= pin.length) return
         entered += d
         error = false
         if (entered.length == pin.length) {
-            if (entered == pin) onUnlock() else { error = true; entered = "" }
+            if (entered == pin) { Repo.setSetting("pin_fails", "0"); onUnlock() } else {
+                error = true; entered = ""
+                val fails = (Repo.setting("pin_fails", "0").toIntOrNull() ?: 0) + 1
+                if (fails >= 5) {
+                    Repo.setSetting("pin_fails", "0")
+                    Repo.setSetting("pin_block_until", (System.currentTimeMillis() + 30_000L).toString())
+                    waitLeft = 30
+                } else Repo.setSetting("pin_fails", fails.toString())
+            }
         }
     }
 
@@ -282,7 +301,7 @@ fun PinScreen(pin: String, onUnlock: () -> Unit) {
             Icon(Icons.Filled.Lock, null, Modifier.size(40.dp), tint = ios.label)
             Spacer(Modifier.height(12.dp))
             Text(Repo.businessName(), fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = ios.label)
-            Text(if (error) "Galat PIN, dobara daalein" else "PIN daalein",
+            Text(if (waitLeft > 0) "Bahut galat PIN. $waitLeft second ruk kar try karein" else if (error) "Galat PIN, dobara daalein" else "PIN daalein",
                 color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(24.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -352,19 +371,28 @@ fun PinScreen(pin: String, onUnlock: () -> Unit) {
 }
 
 
-/** System fingerprint / face prompt (Android 9+). Calls onOk only on success; otherwise the PIN pad stays. */
+/** v1.0.45: is a fingerprint / face sensor set up on this phone (androidx.biometric, Android 8+)? */
+fun canBiometric(ctx: android.content.Context): Boolean = try {
+    androidx.biometric.BiometricManager.from(ctx).canAuthenticate(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK) ==
+        androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS
+} catch (_: Throwable) { false }
+
+/** Fingerprint / face unlock via androidx.biometric. Falls back silently to the PIN pad. */
 fun biometricUnlock(activity: android.app.Activity, onOk: () -> Unit) {
-    if (Build.VERSION.SDK_INT < 28) return
+    val fa = activity as? androidx.fragment.app.FragmentActivity ?: return
     try {
-        val ex = activity.mainExecutor
-        val prompt = android.hardware.biometrics.BiometricPrompt.Builder(activity)
+        val info = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
             .setTitle("BahiKhata kholein")
             .setSubtitle("Finger ya face se unlock")
-            .setNegativeButton("PIN daalein", ex) { _, _ -> }
+            .setNegativeButtonText("PIN daalein")
+            .setAllowedAuthenticators(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK)
             .build()
-        prompt.authenticate(android.os.CancellationSignal(), ex,
-            object : android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
-                override fun onAuthenticationSucceeded(result: android.hardware.biometrics.BiometricPrompt.AuthenticationResult?) { onOk() }
+        val prompt = androidx.biometric.BiometricPrompt(fa, androidx.core.content.ContextCompat.getMainExecutor(fa),
+            object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
+                    Repo.setSetting("pin_fails", "0"); onOk()
+                }
             })
+        prompt.authenticate(info)
     } catch (_: Throwable) {}
 }

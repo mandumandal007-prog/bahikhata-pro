@@ -58,9 +58,15 @@ fun NumField(
     suffix: String? = null,
     prefix: String? = null
 ) {
+    var calc by remember { mutableStateOf(false) }
     IosField(value, { v -> onChange(cleanAmountInput(v)) }, label, modifier,
         keyboard = KeyboardType.Decimal, prefix = prefix?.let { if (it == "₹") com.bahikhata.app.util.NumFmt.symbol else it }, suffix = suffix,
-        placeholder = "0")
+        placeholder = "0",
+        trailing = if (remember { com.bahikhata.app.data.Repo.setting("calc_in_amount", "1") == "1" }) ({
+            androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Calculate, "Calculator",
+                Modifier.padding(start = 6.dp).size(22.dp).clickable { calc = true }, tint = ios.tint)
+        }) else null)
+    if (calc) CalcDialog(value, onDismiss = { calc = false }) { r -> onChange(cleanAmountInput(r)); calc = false }
 }
 
 @Composable

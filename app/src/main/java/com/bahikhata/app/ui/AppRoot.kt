@@ -56,6 +56,8 @@ sealed class Screen {
     data object Settings : Screen()
     data object Auth : Screen()
     data class Prefs(val group: String) : Screen()
+    /** v1.0.45 business tools (Pro hub and its screens). */
+    data class Pro(val key: String) : Screen()
 }
 
 enum class Tab(val label: String, val icon: ImageVector, val outline: ImageVector, val title: String) {
@@ -86,6 +88,7 @@ class Nav {
         Screen.NewInvoice -> "Bill"
         Screen.Auth -> "Account"
         is Screen.Prefs -> "Back"
+        is Screen.Pro -> "Tools"
         null -> "Back"
     }
 }
@@ -171,6 +174,7 @@ fun MainShell() {
                 Screen.Settings -> SettingsScreen(nav)
                 Screen.Auth -> AuthScreen(firstLaunch = false, onDone = { nav.back() })
                 is Screen.Prefs -> PrefsScreen(s.group, nav)
+                is Screen.Pro -> ProScreen(s.key, nav)
                 Screen.Tabs -> TabsScaffold(nav)
             }
         }
@@ -198,6 +202,7 @@ fun TabsScaffold(nav: Nav) {
                     }
                 },
                 actions = {
+                    NavIcon(Icons.Outlined.Apps, "Business tools") { nav.go(Screen.Pro("hub")) }
                     NavIcon(Icons.Outlined.Calculate, "Calculators") { nav.go(Screen.Tools) }
                     NavIcon(Icons.Outlined.Settings, "Settings") { nav.go(Screen.Settings) }
                 }
