@@ -34,6 +34,14 @@ object S {
     val reminderTpl get() = g("reminder_tpl", "")
     val upiId get() = g("upi_id", "").trim()
     val reminderUpi get() = b("reminder_upi", true)
+    // ---- SMS (v1.0.44)
+    val smsDirect get() = b("sms_direct", true)          // tap = SMS goes straight from the SIM
+    val smsSim get() = g("sms_sim", "0")                 // 0 = phone default, 1 = SIM 1, 2 = SIM 2
+    val waSms get() = b("wa_sms", true)                  // WhatsApp reminder ke saath SMS bhi
+    val entrySms get() = b("entry_sms", false)           // har nayi entry par party ko SMS
+    val autoRem get() = b("auto_rem", false)             // due nikli walon ko apne aap SMS
+    val autoRemFreq get() = g("auto_rem_freq", "daily")  // daily | weekly
+    val autoRemHour get() = g("auto_rem_hour", "10").toIntOrNull() ?: 10
     val dueBadge get() = b("due_badge", true)
 
     // ---- Bill & PDF

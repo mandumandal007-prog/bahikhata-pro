@@ -155,64 +155,6 @@ fun QuickEntrySheet(onDismiss: () -> Unit, onSaved: (partyId: Long, gave: Boolea
     )
 }
 
-/**
- * Send WhatsApp reminders to many parties, one by one. Each tap opens WhatsApp with the
- * ready message; when the user comes back, the next party is waiting. Progress is shown.
- */
-@Composable
-fun BulkReminderSheet(parties: List<Party>, onDismiss: () -> Unit) {
-    val ctx = LocalContext.current
-    val shop = remember { Repo.businessName() }
-    val list = remember { parties.filter { it.phone.isNotBlank() && it.balance > 0.005 } }
-    val noPhone = parties.size - list.size
-    var idx by remember { mutableIntStateOf(0) }
-    var sent by remember { mutableIntStateOf(0) }
-    val haptic = rememberHaptic()
-    val progress by animateFloatAsState(if (list.isEmpty()) 1f else idx.toFloat() / list.size, label = "bulk")
-
-    IosSheet(
-        onDismissRequest = onDismiss,
-        title = { Text("Sabko reminder", fontWeight = FontWeight.SemiBold) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape),
-                    color = GotGreen, trackColor = ios.separator)
-                Text(if (list.isEmpty()) "Kisi ka mobile number nahi hai." else "${minOf(idx + 1, list.size)} / ${list.size}  ·  bheje: $sent",
-                    fontSize = 13.sp, color = ios.secondaryLabel)
-                if (idx < list.size) {
-                    val p = list[idx]
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(ios.sheetCell).padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        PartyAvatar(p.id, p.name, 46.dp)
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(p.name, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = ios.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(p.phone, fontSize = 13.sp, color = ios.secondaryLabel)
-                        }
-                        Text(rupees(p.balance), fontSize = 17.sp, fontWeight = FontWeight.Bold, color = GaveRed)
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        BigButton("WhatsApp bhejein", GotGreen, Modifier.weight(1.6f)) {
-                            haptic()
-                            whatsapp(ctx, p.phone, S.reminderText(p.name, rupees(p.balance), shop, true))
-                            sent++; idx++
-                        }
-                        Box(Modifier.weight(1f).height(52.dp).clip(RoundedCornerShape(12.dp)).background(ios.sheetCell)
-                            .clickable { idx++ }, contentAlignment = Alignment.Center) { Text("Chhodein", color = ios.tint, fontSize = 16.sp) }
-                    }
-                } else if (list.isNotEmpty()) {
-                    Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Filled.CheckCircle, null, Modifier.size(48.dp), tint = GotGreen)
-                        Spacer(Modifier.height(6.dp))
-                        Text("Ho gaya! $sent logon ko reminder bheja.", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = ios.label)
-                    }
-                }
-                if (noPhone > 0) Text("$noPhone party ka number nahi hai, unhe chhod diya.", fontSize = 12.sp, color = ios.secondaryLabel)
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(if (idx >= list.size) "Done" else "Band karein", fontWeight = FontWeight.SemiBold, fontSize = 17.sp) } }
-    )
-}
 
 private data class Tip(val icon: ImageVector, val color: Color, val title: String, val text: String)
 

@@ -61,6 +61,10 @@ object Repo {
         bump()
     }
 
+    /** All settings whose key starts with [prefix] (v1.0.44, reminder history). */
+    fun settingsWithPrefix(prefix: String): List<Pair<String, String>> =
+        query("SELECT k, v FROM settings WHERE k LIKE ?", arrayOf("$prefix%")) { (it.getString(0) ?: "") to (it.getString(1) ?: "") }
+
     fun businessName(): String = setting("business", "Meri Dukan")
 
     // ----------------------------------------------------------------- parties

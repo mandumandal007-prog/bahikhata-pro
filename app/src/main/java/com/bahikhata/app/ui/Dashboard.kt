@@ -308,7 +308,7 @@ val MODE_COLORS = mapOf(
 
 /** Overdue row with one-tap WhatsApp reminder. */
 @Composable
-fun OverdueRow(o: OverdueParty, index: Int, count: Int, onOpen: () -> Unit) {
+fun OverdueRow(o: OverdueParty, index: Int, count: Int, onSms: ((Party) -> Unit)? = null, onOpen: () -> Unit) {
     val ctx = LocalContext.current
     GroupCell(index, count, onClick = onOpen, separatorInset = 56.dp, padding = PaddingValues(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)) {
         InitialsAvatar(o.party.name, 34.dp)
@@ -323,9 +323,17 @@ fun OverdueRow(o: OverdueParty, index: Int, count: Int, onOpen: () -> Unit) {
             Box(
                 Modifier.size(34.dp).clip(CircleShape).background(GotGreen.copy(alpha = 0.15f)).clickable {
                     whatsapp(ctx, o.party.phone, S.reminderText(o.party.name, rupees(o.party.balance), Repo.businessName(), true))
+                    com.bahikhata.app.util.ReminderLog.add(o.party.id, "WhatsApp")
                 },
                 contentAlignment = Alignment.Center
             ) { Icon(Icons.Outlined.Chat, "Reminder", tint = GotGreen, modifier = Modifier.size(18.dp)) }
+            if (onSms != null) {
+                Spacer(Modifier.width(6.dp))
+                Box(
+                    Modifier.size(34.dp).clip(CircleShape).background(ios.tint.copy(alpha = 0.15f)).clickable { onSms(o.party) },
+                    contentAlignment = Alignment.Center
+                ) { Icon(Icons.Outlined.Sms, "SMS", tint = ios.tint, modifier = Modifier.size(18.dp)) }
+            }
         }
     }
 }

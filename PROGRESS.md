@@ -12,3 +12,8 @@
 ## v1.0.43 Round 5 (3 AM) — final polish
 - 3:36 edits: safe amount input (cleanAmountInput, toAmount rejects inf/neg), chart guard n==0, 'Sab hisaab saaf 🎉' empty states for Lena/Dena filters, 'App share karein' row in Settings. BUILD8 started.
 - 3:39 BUILD8 green (VERSION_CODE=43). PUSHING commit43 — check commits before re-pushing!
+- PUSHED 06dfac1 at 3:40. Do NOT push again. NEXT: CI poll, download, verify, changelog.
+- ALL DONE 3:51: CI 43 green, release v1.0.43, APK verified (com.bhaikhata.app, 43, same cert as v42), copied to latest. Changelog Round 5 appended.
+
+## v1.0.44 (8:20 AM) — direct SMS
+- 8:56 edits: util/Sms.kt (SmsSender w/ sent-receipt, ReminderLog in settings, SmsTexts, EntrySms), util/AutoRemind.kt (WorkManager, off by default), ui/SmsUi.kt (rememberSmsSender, whatsappStatement, new BulkReminderSheet w/ SMS auto mode), party SMS tile, swipe menu, overdue SMS btn, bill SMS, Settings SMS section + SIM picker, manifest SEND_SMS/READ_PHONE_STATE. BUILD9 started.

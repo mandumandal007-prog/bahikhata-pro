@@ -32,7 +32,7 @@ import com.bahikhata.app.util.shareFile
 data class PrefGroup(val key: String, val title: String, val icon: ImageVector, val color: Color, val sub: String)
 
 val PREF_GROUPS = listOf(
-    PrefGroup("khata", "Khata aur Reminder", Icons.Filled.People, Color(0xFF007AFF), "List, sorting, entry, reminder message, UPI"),
+    PrefGroup("khata", "Khata aur Reminder", Icons.Filled.People, Color(0xFF007AFF), "List, sorting, entry, reminder, SMS, UPI"),
     PrefGroup("bill", "Bill aur PDF", Icons.AutoMirrored.Filled.ReceiptLong, Color(0xFFFF9500), "Bill number, GST, PDF rang, sign, footer"),
     PrefGroup("stock", "Stock aur Cashbook", Icons.Filled.Inventory2, Color(0xFF34C759), "Unit, kam-stock seema, sorting, cash mode"),
     PrefGroup("display", "Tab bar aur Dikhawat", Icons.Filled.Dashboard, Color(0xFF5856D6), "Floating bar, tabs, date format, paise"),
@@ -171,7 +171,67 @@ private fun KhataPrefs() {
         valid = { it.contains("@") && !it.contains(" ") })
     SwitchRow(2, 3, Icons.Filled.AlternateEmail, Color(0xFF007AFF), "Reminder me UPI ID jodein", null, "reminder_upi", true)
     val ex = S.reminderText("Ramesh", rupees(1500.0), Repo.businessName(), true)
-    SectionFooter("Preview: $ex")
+    val parts = com.bahikhata.app.util.SmsSender.partsCount(ex)
+    SectionFooter("Preview: $ex\n(SMS me ye $parts message ka hoga" + (if (parts > 1) " — chhota likhne se kam SMS lagenge)" else ")"))
+
+    SmsPrefs()
+}
+
+/** v1.0.44 — direct SMS settings. */
+@Composable
+private fun SmsPrefs() {
+    val ctx = LocalContext.current
+    val tick = Repo.tick
+    val sms = rememberSmsSender()
+    val autoOn = remember(tick) { S.autoRem }
+    val dual = remember { com.bahikhata.app.util.SmsSender.simSlots(ctx) >= 2 }
+    val autoKey = remember(tick) { "${S.autoRem}|${S.autoRemFreq}|${S.autoRemHour}" }
+    LaunchedEffect(autoKey) { com.bahikhata.app.util.AutoRemind.sync(ctx) }
+    fun askAgain() { Repo.setSetting("sms_perm_denied", "0"); sms.withPermission { ok ->
+        if (!ok) android.widget.Toast.makeText(ctx, "Permission nahi mili — SMS Messages app se jayega", android.widget.Toast.LENGTH_LONG).show() } }
+    val n = 4 + (if (autoOn) 2 else 0) + (if (dual) 1 else 0)
+    var i = 0
+    SectionHeader("SMS")
+    SwitchRow(i++, n, Icons.Filled.Sms, Color(0xFF34C759), "SMS seedha bhejein", "Tap karte hi SIM se SMS chala jaye, Messages app nahi khulega", "sms_direct", true) { v -> if (v) askAgain() }
+    SwitchRow(i++, n, Icons.Filled.Chat, Color(0xFF25D366), "WhatsApp ke saath SMS bhi", "WhatsApp reminder par chhota statement SMS bhi apne aap", "wa_sms", true)
+    SwitchRow(i++, n, Icons.Filled.MarkChatRead, Color(0xFF007AFF), "Har nayi entry par SMS", "Diye / Mile save karte hi party ko rakam aur baaki ka SMS", "entry_sms", false) { v -> if (v) askAgain() }
+    SwitchRow(i++, n, Icons.Filled.Schedule, Color(0xFFFF9500), "Due walon ko apne aap SMS", "Due date nikal gayi to tay samay par reminder SMS", "auto_rem", false) { v -> if (v) askAgain() }
+    if (autoOn) {
+        ChoiceRow(i++, n, Icons.Filled.Repeat, Color(0xFF5856D6), "Kitni baar", "auto_rem_freq", "daily", listOf("daily" to "Roz", "weekly" to "Hafte me ek baar"))
+        ChoiceRow(i++, n, Icons.Filled.AccessTime, Color(0xFFFF2D55), "Kis samay", "auto_rem_hour", "10",
+            (8..21).map { h -> h.toString() to (if (h < 12) "$h AM" else if (h == 12) "12 PM" else "${h - 12} PM") })
+    }
+    if (dual) SimChoiceRow(i, n)
+    val last = remember(tick) { Repo.setting("auto_rem_last", "") }
+    val lastTxt = last.split(":").takeIf { it.size >= 2 }?.let { s -> s[0].toLongOrNull()?.let { "Pichhli baar: ${fmtDateTime(it)} — ${s[1]} SMS gaye." } }
+    SectionFooter(
+        "SMS aapke SIM se jata hai (normal SMS charge). Ek party ko 20 ghante me ek hi auto reminder jata hai." +
+            (if (autoOn) "\n" + (lastTxt ?: "Abhi tak auto reminder nahi chala.") else "")
+    )
+}
+
+/** Dual SIM: which SIM sends the SMS. Reading the SIM slots needs the phone-state permission. */
+@Composable
+private fun SimChoiceRow(i: Int, n: Int) {
+    val ctx = LocalContext.current
+    val cur = Repo.setting("sms_sim", "0")
+    var open by remember { mutableStateOf(false) }
+    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { ok ->
+        if (!ok) { S.set("sms_sim", "0"); android.widget.Toast.makeText(ctx, "Permission nahi mili — default SIM se SMS jayega", android.widget.Toast.LENGTH_LONG).show() }
+    }
+    val opts = listOf("0" to "Phone ka default", "1" to "SIM 1", "2" to "SIM 2")
+    GroupCell(i, n, onClick = { open = true }, separatorInset = 57.dp) {
+        IconTile(Icons.Filled.SimCard, Color(0xFF8E8E93)); Spacer(Modifier.width(12.dp))
+        Text("SMS kis SIM se", Modifier.weight(1f), fontSize = 17.sp, color = ios.label)
+        Text(opts.firstOrNull { it.first == cur }?.second ?: "Phone ka default", fontSize = 16.sp, color = ios.secondaryLabel, maxLines = 1)
+        Chevron()
+    }
+    if (open) IosActionSheet("SMS kis SIM se jaye?", opts.map { (v, label) ->
+        SheetAction((if (v == cur) "✓ " else "") + label) {
+            S.set("sms_sim", v)
+            if (v != "0" && !com.bahikhata.app.util.SmsSender.hasPhoneState(ctx)) ask.launch(android.Manifest.permission.READ_PHONE_STATE)
+        }
+    }) { open = false }
 }
 
 @Composable

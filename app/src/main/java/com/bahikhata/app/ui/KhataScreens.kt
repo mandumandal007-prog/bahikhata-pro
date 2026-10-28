@@ -24,6 +24,10 @@ import com.bahikhata.app.util.S
 import com.bahikhata.app.util.addDays
 import com.bahikhata.app.data.Cloud
 import com.bahikhata.app.util.smsTo
+import com.bahikhata.app.util.EntrySms
+import com.bahikhata.app.util.ReminderLog
+import com.bahikhata.app.util.SmsTexts
+import com.bahikhata.app.util.fmtDateTime
 import com.bahikhata.app.util.whatsappFile
 import java.io.File
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -101,6 +105,8 @@ fun KhataScreen(nav: Nav) {
     }
 
     val dueAll = remember(tick) { Repo.overdueParties() }
+    val sms = rememberSmsSender()
+    val remAt = remember(tick) { ReminderLog.lastAll() }
     val willGet = all.filter { it.balance > 0 }.sumOf { it.balance }
     val willGive = all.filter { it.balance < 0 }.sumOf { -it.balance }
     val shown = all.filter {
@@ -185,7 +191,7 @@ fun KhataScreen(nav: Nav) {
                             .clickable { bulk = overdueRem.sortedByDescending { it.balance } }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.Campaign, null, tint = GotGreen)
                             Spacer(Modifier.width(10.dp))
-                            Text("${overdueRem.size} logon ki due nikal gayi — sabko WhatsApp reminder bhejein", fontSize = 14.sp, color = ios.label, modifier = Modifier.weight(1f))
+                            Text("${overdueRem.size} logon ki due nikal gayi — sabko SMS / WhatsApp reminder bhejein", fontSize = 14.sp, color = ios.label, modifier = Modifier.weight(1f))
                             Chevron()
                         }
                     }
@@ -209,13 +215,12 @@ fun KhataScreen(nav: Nav) {
                 SwipeActionsRow(i, shown.size, enabled = true,
                     onSwipeRight = {
                         if (p.phone.isBlank()) swipeMenu = p
-                        else whatsapp(ctx, p.phone, if (p.balance > 0.005) S.reminderText(p.name, rupees(p.balance), shopName, true)
-                            else "Namaste ${p.name} ji, $shopName ke saath aapka hisaab: ${balanceLabel(p.balance)} ${rupees(abs(p.balance))}. Dhanyavaad 🙏")
+                        else whatsappStatement(ctx, p, sms)
                     },
                     onSwipeLeft = { swipeMenu = p },
                     modifier = Modifier.animateItem()
                 ) {
-                    PartyRow(p, i, shown.size, rowOpts, p.id in dueIds) { nav.go(Screen.PartyDetail(p.id)) }
+                    PartyRow(p, i, shown.size, rowOpts, p.id in dueIds, remAt[p.id]) { nav.go(Screen.PartyDetail(p.id)) }
                 }
             }
         }
@@ -245,6 +250,7 @@ fun KhataScreen(nav: Nav) {
     LaunchedEffect(savedMsg) { if (savedMsg != null) { kotlinx.coroutines.delay(2200); savedMsg = null } }
     if (quick) QuickEntrySheet(onDismiss = { quick = false }) { pid, g, a ->
         quick = false
+        EntrySms.maybeSend(ctx, pid, g, a)
         savedMsg = "${Repo.party(pid)?.name ?: ""}: ${if (g) "Diye" else "Mile"} ${rupees(a)} ✓"
     }
     bulk?.let { BulkReminderSheet(it) { bulk = null } }
@@ -255,7 +261,8 @@ fun KhataScreen(nav: Nav) {
     swipeMenu?.let { p ->
         IosActionSheet(p.name, buildList {
             if (p.phone.isNotBlank()) add(SheetAction("Call karein: ${p.phone}") { call(ctx, p.phone) })
-            if (p.phone.isNotBlank()) add(SheetAction("WhatsApp reminder") { whatsapp(ctx, p.phone, S.reminderText(p.name, rupees(abs(p.balance)), shopName, true)) })
+            if (p.phone.isNotBlank()) add(SheetAction("SMS reminder (seedha)") { sms.send(p.phone, SmsTexts.reminder(p, shopName), p.name, p.id) })
+            if (p.phone.isNotBlank()) add(SheetAction("WhatsApp + statement PDF") { whatsappStatement(ctx, p, sms) })
             add(SheetAction(if (p.phone.isBlank()) "Number jodein / Edit" else "Party edit karein") { editP = p })
             add(SheetAction("Khata kholein") { nav.go(Screen.PartyDetail(p.id)) })
         }) { swipeMenu = null }
@@ -277,7 +284,7 @@ private fun sortLabel(s: String) = when (s) {
 private data class RowOpts(val phone: Boolean, val photos: Boolean, val compact: Boolean, val dueBadge: Boolean)
 
 @Composable
-private fun PartyRow(p: Party, index: Int, count: Int, o: RowOpts, overdue: Boolean, onClick: () -> Unit) {
+private fun PartyRow(p: Party, index: Int, count: Int, o: RowOpts, overdue: Boolean, remindedAt: Long? = null, onClick: () -> Unit) {
     val av = if (o.compact) 34.dp else 42.dp
     val vpad = if (o.compact) 5.dp else 9.dp
     GroupCell(index, count, onClick = onClick, separatorInset = if (o.compact) 58.dp else 68.dp, padding = PaddingValues(start = 12.dp, end = 8.dp, top = vpad, bottom = vpad)) {
@@ -286,7 +293,8 @@ private fun PartyRow(p: Party, index: Int, count: Int, o: RowOpts, overdue: Bool
         Column(Modifier.weight(1f)) {
             Text(p.name, fontSize = if (o.compact) 16.sp else 17.sp, fontWeight = FontWeight.Medium, color = ios.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (!o.compact || o.phone) Text(
-                (if (p.type == "SUPPLIER") "Supplier" else "Customer") + (if (o.phone && p.phone.isNotBlank()) " · ${p.phone}" else ""),
+                (if (p.type == "SUPPLIER") "Supplier" else "Customer") + (if (o.phone && p.phone.isNotBlank()) " · ${p.phone}" else "") +
+                    (if (remindedAt != null && p.balance > 0.005) " · 🔔 ${fmtDate(remindedAt).substringBeforeLast(' ')}" else ""),
                 fontSize = if (o.compact) 12.sp else 14.sp, color = ios.secondaryLabel, maxLines = 1
             )
         }
@@ -443,6 +451,9 @@ fun PartyScreen(id: Long, nav: Nav) {
     val shopPhone = Repo.setting("phone", "")
     val nextDue = entries.mapNotNull { it.dueDate }.filter { it >= System.currentTimeMillis() - 86_400_000L }.minOrNull()
 
+    val sms = rememberSmsSender()
+    val lastRem = remember(tick) { ReminderLog.all(id) }
+    var remHistory by remember { mutableStateOf(false) }
     fun statementFile() = Pdf.statement(ctx, party, entries, shop, shopPhone)
     fun sharePdf() {
         shareFile(ctx, statementFile(), "application/pdf", "Statement share karein")
@@ -486,11 +497,20 @@ fun PartyScreen(id: Long, nav: Nav) {
                     Text(rupees(abs(party.balance)), fontSize = 34.sp, fontWeight = FontWeight.Bold, color = balanceColor(party.balance))
                     Text(balanceLabel(party.balance), fontSize = 15.sp, color = balanceColor(party.balance))
                     if (nextDue != null && party.balance > 0) Text("Due date: ${fmtDate(nextDue)}", fontSize = 13.sp, color = IosOrange)
+                    lastRem.firstOrNull()?.let { (t, via) ->
+                        Text("🔔 Aakhri reminder: ${fmtDateTime(t)} · $via" + (if (lastRem.size > 1) "  (${lastRem.size} baar)" else ""),
+                            fontSize = 13.sp, color = ios.secondaryLabel, modifier = Modifier.padding(top = 2.dp).clip(RoundedCornerShape(6.dp)).clickable { remHistory = true }.padding(horizontal = 4.dp, vertical = 2.dp))
+                    }
                 }
                 Spacer(Modifier.height(14.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ActionTile(Icons.Outlined.Call, "Call", party.phone.isNotBlank(), Modifier.weight(1f)) { call(ctx, party.phone) }
-                    ActionTile(Icons.Outlined.Chat, "Reminder", modifier = Modifier.weight(1f)) { whatsapp(ctx, party.phone, summary()) }
+                    ActionTile(Icons.Outlined.Chat, "WhatsApp", modifier = Modifier.weight(1f)) {
+                        if (party.phone.isBlank()) noPhone = true else whatsappStatement(ctx, party, sms)
+                    }
+                    ActionTile(Icons.Outlined.Sms, "SMS", modifier = Modifier.weight(1f)) {
+                        if (party.phone.isBlank()) noPhone = true else sms.send(party.phone, summary(), party.name, party.id)
+                    }
                     ActionTile(Icons.Outlined.PictureAsPdf, "Statement", modifier = Modifier.weight(1f)) { shareMenu = true }
                 }
                 Spacer(Modifier.height(18.dp))
@@ -519,6 +539,12 @@ fun PartyScreen(id: Long, nav: Nav) {
         }
     }
 
+    if (remHistory) IosAlert(
+        onDismissRequest = { remHistory = false },
+        title = { Text("Reminder history") },
+        text = { Text(lastRem.joinToString("\n") { (t, via) -> "${fmtDateTime(t)} · $via" }) },
+        confirmButton = { TextButton(onClick = { remHistory = false }) { Text("OK", fontSize = 17.sp, fontWeight = FontWeight.SemiBold) } }
+    )
     if (menu) IosActionSheet(party.name, listOf(
         SheetAction("Party edit karein") { editParty = true },
         SheetAction("Party delete karein", destructive = true) { delParty = true }
@@ -526,10 +552,10 @@ fun PartyScreen(id: Long, nav: Nav) {
     if (shareMenu) IosActionSheet("Statement PDF bhejein", listOf(
         SheetAction("WhatsApp: ${party.name}") {
             if (party.phone.isBlank()) noPhone = true
-            else whatsappFile(ctx, statementFile(), "application/pdf", party.phone, summary())
+            else whatsappStatement(ctx, party, sms)
         },
         SheetAction("SMS: ${party.name}") {
-            if (party.phone.isBlank()) noPhone = true else smsTo(ctx, party.phone, summary())
+            if (party.phone.isBlank()) noPhone = true else sms.send(party.phone, SmsTexts.statement(party, entries, shop), party.name, party.id)
         },
         SheetAction("Doosre app se share") { sharePdf() }
     )) { shareMenu = false }
@@ -544,6 +570,7 @@ fun PartyScreen(id: Long, nav: Nav) {
     newEntry?.let { gave ->
         EntryDialog(party.name, gave, null, onDismiss = { newEntry = null }) { g, amt, mode, note, date, due ->
             Repo.addEntry(id, g, amt, mode, note, date, due)
+            EntrySms.maybeSend(ctx, id, g, amt)
             haptic()
             newEntry = null
         }

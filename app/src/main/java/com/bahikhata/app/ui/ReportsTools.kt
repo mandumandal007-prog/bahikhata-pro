@@ -84,6 +84,7 @@ fun ReportsScreen(nav: Nav) {
     val topDebtors = parties.filter { it.balance > 0 }.sortedByDescending { it.balance }.take(5)
     val lowStock = items.filter { it.qty <= it.lowStock }
     val overdue = remember(tick, parties) { overdueList(parties) }
+    val overdueSms = rememberSmsSender()
     val ages = remember(tick, parties) { ageing(parties) }
 
     // collection insights: compare with the same-length window just before
@@ -172,11 +173,13 @@ fun ReportsScreen(nav: Nav) {
                 Text("DUE NIKAL GAYI · ${overdue.size} LOG · ${amt(overdue.sumOf { it.party.balance })}", Modifier.padding(start = 16.dp, bottom = 6.dp, top = 4.dp),
                     fontSize = 13.sp, color = IosOrange, fontWeight = FontWeight.SemiBold)
                 val shownO = if (showAllOverdue) overdue else overdue.take(5)
-                shownO.forEachIndexed { i, o -> OverdueRow(o, i, shownO.size) { nav.go(Screen.PartyDetail(o.party.id)) } }
+                shownO.forEachIndexed { i, o ->
+                    OverdueRow(o, i, shownO.size, onSms = { p -> overdueSms.send(p.phone, com.bahikhata.app.util.SmsTexts.reminder(p, Repo.businessName()), p.name, p.id) }) { nav.go(Screen.PartyDetail(o.party.id)) }
+                }
                 if (overdue.size > 5) TextButton(onClick = { showAllOverdue = !showAllOverdue }) {
                     Text(if (showAllOverdue) "Kam dikhayein" else "Sab ${overdue.size} dikhayein")
                 }
-                Text("Hara button dabate hi WhatsApp par reminder chala jayega.", fontSize = 12.sp, color = ios.secondaryLabel, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
+                Text("Hara button = WhatsApp reminder. Neela button = SMS seedha chala jayega.", fontSize = 12.sp, color = ios.secondaryLabel, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
             }
         }
 

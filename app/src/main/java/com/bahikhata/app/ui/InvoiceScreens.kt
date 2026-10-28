@@ -82,7 +82,7 @@ fun InvoiceShareSheet(inv: Invoice, onDismiss: () -> Unit) {
                 whatsappFile(ctx, f, "application/pdf", inv.phone, summary)
             }
         },
-        SheetAction("SMS: $who") { if (inv.phone.isBlank()) noPhone = true else smsTo(ctx, inv.phone, summary) },
+        SheetAction("SMS: $who") { if (inv.phone.isBlank()) noPhone = true else com.bahikhata.app.util.EntrySms.direct(ctx, inv.phone, summary, who) },
         SheetAction("Doosre app se share") { shareInvoicePdf(ctx, inv) }
     )) { if (!noPhone) onDismiss() }
     if (noPhone) IosAlert(
