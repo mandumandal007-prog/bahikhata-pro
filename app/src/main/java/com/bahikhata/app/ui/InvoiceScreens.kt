@@ -290,7 +290,7 @@ fun InvoiceCreateScreen(nav: Nav) {
                             }
                         }
                         saved = inv
-                    }, modifier = Modifier.height(52.dp)) { Text(if (isQuote) "Save Quotation" else "Save Bill") }
+                    }, modifier = Modifier.heightIn(min = 52.dp)) { Text(if (isQuote) "Save Quotation" else "Save Bill") }
                 }
             }
         }

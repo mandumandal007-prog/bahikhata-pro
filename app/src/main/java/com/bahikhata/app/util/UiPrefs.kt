@@ -18,6 +18,8 @@ object UiPrefs {
     var fontStyle by mutableStateOf("system"); private set
     /** "blue" | "green" | "orange" | "purple" | "pink" */
     var accent by mutableStateOf("blue"); private set
+    /** full-app theme: classic | ocean | emerald | royal | sunset | rose | peacock | gold | amoled */
+    var appTheme by mutableStateOf("classic"); private set
     var currency by mutableStateOf("₹"); private set
     /** true = 1,00,000 (Indian), false = 100,000 */
     var indianGrouping by mutableStateOf(true); private set
@@ -30,6 +32,7 @@ object UiPrefs {
         textSize = p.getString("textSize", "m") ?: "m"
         fontStyle = p.getString("fontStyle", "system") ?: "system"
         accent = p.getString("accent", "blue") ?: "blue"
+        appTheme = p.getString("appTheme", "classic") ?: "classic"
         currency = p.getString("currency", "₹") ?: "₹"
         indianGrouping = p.getBoolean("indianGrouping", true)
         haptics = p.getBoolean("haptics", true)
@@ -41,6 +44,7 @@ object UiPrefs {
     fun changeTextSize(v: String) { textSize = v; sp?.edit()?.putString("textSize", v)?.apply() }
     fun changeFontStyle(v: String) { fontStyle = v; sp?.edit()?.putString("fontStyle", v)?.apply() }
     fun changeAccent(v: String) { accent = v; sp?.edit()?.putString("accent", v)?.apply() }
+    fun changeAppTheme(v: String) { appTheme = v; sp?.edit()?.putString("appTheme", v)?.apply() }
     fun changeCurrency(v: String) { currency = v; NumFmt.symbol = v; sp?.edit()?.putString("currency", v)?.apply() }
     fun changeIndianGrouping(v: Boolean) { indianGrouping = v; NumFmt.indian = v; sp?.edit()?.putBoolean("indianGrouping", v)?.apply() }
     fun changeHaptics(v: Boolean) { haptics = v; sp?.edit()?.putBoolean("haptics", v)?.apply() }

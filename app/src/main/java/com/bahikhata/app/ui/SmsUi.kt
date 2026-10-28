@@ -244,7 +244,7 @@ fun BulkReminderSheet(parties: List<Party>, onDismiss: () -> Unit) {
                                 else whatsappStatement(ctx, p, null)
                                 sent++; idx++
                             }
-                            Box(Modifier.weight(1f).height(52.dp).clip(RoundedCornerShape(12.dp)).background(ios.sheetCell)
+                            Box(Modifier.weight(1f).heightIn(min = 52.dp).clip(RoundedCornerShape(12.dp)).background(ios.sheetCell)
                                 .clickable { idx++ }, contentAlignment = Alignment.Center) { Text("Chhodein", color = ios.tint, fontSize = 16.sp) }
                         }
                     }

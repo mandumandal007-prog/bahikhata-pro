@@ -7,6 +7,8 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -198,12 +200,18 @@ fun SettingsScreen(nav: Nav) {
                 }
             }
 
-            SectionHeader("Dikhawat")
+            SectionHeader("Dikhawat (Appearance)")
             SectionCard {
-                Text("Theme", fontSize = 13.sp, color = ios.secondaryLabel); Spacer(Modifier.height(6.dp))
+                Text("App theme", fontSize = 13.sp, color = ios.secondaryLabel); Spacer(Modifier.height(8.dp))
+                AppThemePicker()
+                Spacer(Modifier.height(14.dp))
+                Text("Bhasha / Language", fontSize = 13.sp, color = ios.secondaryLabel); Spacer(Modifier.height(6.dp))
+                LanguagePicker()
+                Spacer(Modifier.height(14.dp))
+                Text("Light / Dark", fontSize = 13.sp, color = ios.secondaryLabel); Spacer(Modifier.height(6.dp))
                 IosSegmented(listOf("System", "Light", "Dark"), theme.replaceFirstChar { it.uppercase() }, { Repo.setSetting("theme", it.lowercase()) })
                 Spacer(Modifier.height(14.dp))
-                Text("Accent colour", fontSize = 13.sp, color = ios.secondaryLabel); Spacer(Modifier.height(8.dp))
+                Text(if (UiPrefs.appTheme == "classic" || UiPrefs.appTheme == "amoled") "Accent colour" else "Accent colour (sirf Classic / AMOLED theme me)", fontSize = 13.sp, color = ios.secondaryLabel); Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     listOf("blue", "green", "orange", "purple", "pink").forEach { a ->
                         val c = accentColor(a, ios.dark)
@@ -429,5 +437,66 @@ fun SettingsScreen(nav: Nav) {
                 }) { Text("Sirf logout", fontSize = 15.sp) }
             }
         )
+    }
+}
+
+
+@Composable
+private fun AppThemePicker() {
+    val sel = UiPrefs.appTheme
+    val rows = APP_THEMES.chunked(3)
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        rows.forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEach { p ->
+                    val on = sel == p.key
+                    val dk = p.forceDark || ios.dark
+                    val tintC = if (p.key == "classic" || p.key == "amoled") accentColor(UiPrefs.accent, dk) else if (dk) p.tintDark else p.tintLight
+                    val bg = if (dk) p.bgDark else p.bgLight
+                    val cellC = if (dk) (p.cellDark ?: Color(0xFF1C1C1E)) else Color.White
+                    Column(
+                        Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
+                            .border(if (on) 2.5.dp else 1.dp, if (on) tintC else ios.separator, RoundedCornerShape(12.dp))
+                            .clickable { UiPrefs.changeAppTheme(p.key) }
+                    ) {
+                        // mini preview: header bar, a cell with an amount, a button
+                        Column(Modifier.fillMaxWidth().background(bg).padding(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(Modifier.fillMaxWidth(0.6f).height(6.dp).clip(RoundedCornerShape(3.dp)).background(if (dk) Color.White.copy(alpha = 0.8f) else Color.Black.copy(alpha = 0.75f)))
+                            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(5.dp)).background(cellC).padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(10.dp).clip(CircleShape).background(tintC)); Spacer(Modifier.width(4.dp))
+                                Box(Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color.Gray.copy(alpha = 0.4f)))
+                            }
+                            Box(Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)).background(tintC))
+                        }
+                        Row(Modifier.fillMaxWidth().background(ios.cell).padding(horizontal = 6.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (on) { Icon(Icons.Filled.Check, null, tint = tintC, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(2.dp)) }
+                            Text(p.name, fontSize = 12.sp, color = ios.label, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, lineHeight = 14.sp)
+                        }
+                    }
+                }
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LanguagePicker() {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val cur = com.bahikhata.app.util.Lang.code
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(ios.fieldOnCell)) {
+        com.bahikhata.app.util.Lang.OPTIONS.forEachIndexed { i, o ->
+            Row(
+                Modifier.fillMaxWidth().clickable { com.bahikhata.app.util.Lang.change(ctx, o.code) }.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    androidx.compose.material3.Text(o.label, fontSize = 17.sp, color = ios.label)
+                    androidx.compose.material3.Text(o.sub, fontSize = 12.sp, color = ios.secondaryLabel)
+                }
+                if (cur == o.code) Icon(Icons.Filled.Check, null, tint = ios.tint, modifier = Modifier.size(22.dp))
+            }
+            if (i < com.bahikhata.app.util.Lang.OPTIONS.size - 1) Box(Modifier.fillMaxWidth().padding(start = 12.dp).height(0.5.dp).background(ios.separator))
+        }
     }
 }

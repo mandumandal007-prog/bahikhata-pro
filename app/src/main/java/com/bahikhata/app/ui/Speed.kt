@@ -174,7 +174,7 @@ fun TipsCarousel(onDone: () -> Unit) {
     Dialog(onDismissRequest = onDone, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(Modifier.padding(24.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(ios.sheetBg).padding(vertical = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
-            HorizontalPager(pager, Modifier.fillMaxWidth().height(250.dp)) { pg ->
+            HorizontalPager(pager, Modifier.fillMaxWidth().height(fitDp(250.dp))) { pg ->
                 val t = tips[pg]
                 Column(Modifier.fillMaxSize().padding(horizontal = 22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                     Box(Modifier.size(84.dp).clip(RoundedCornerShape(22.dp)).background(t.color), contentAlignment = Alignment.Center) {

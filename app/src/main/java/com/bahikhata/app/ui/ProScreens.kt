@@ -12,6 +12,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -62,6 +65,9 @@ private val PRO_TOOLS = listOf(
     ProTool("card", "Visiting card", "Dukan ka digital card banao aur bhejo", Icons.Filled.ContactPage, Color(0xFFFFCC00)),
     ProTool("csv", "Excel / CSV export", "Saara data Excel file me", Icons.Filled.TableChart, Color(0xFF1D6F42)),
     ProTool("notify", "Roz ka hisaab notification", "Har raat aaj ka total phone par", Icons.Filled.NotificationsActive, Color(0xFFFF9F0A)),
+    ProTool("poster", "Offer poster ✨", "Sale, tyohar, naya maal, Scan & Pay poster", Icons.Filled.Campaign, Color(0xFFE85D04)),
+    ProTool("msgs", "Tyohar / offer message", "Ready message: Diwali, Holi, offer…", Icons.Filled.Celebration, Color(0xFFB5179E)),
+    ProTool("diary", "Dukan diary", "Yaad rakhne wali baatein, kaam ki list", Icons.Filled.EditNote, Color(0xFF8E6E53)),
     ProTool("trash", "Recycle bin", "Delete hui entry wapas laao (30 din)", Icons.Filled.DeleteSweep, Color(0xFF8E8E93)),
 )
 
@@ -81,6 +87,9 @@ fun ProScreen(key: String, nav: Nav) {
         "csv" -> CsvScreen(nav)
         "notify" -> NotifyScreen(nav)
         "trash" -> TrashScreen(nav)
+        "poster" -> PosterScreen(nav)
+        "msgs" -> ReadyMsgScreen(nav)
+        "diary" -> DiaryScreen(nav)
         else -> ProHub(nav)
     }
 }
@@ -114,7 +123,7 @@ private fun Hint(text: String) = Text(text, fontSize = 13.sp, color = ios.second
 @Composable
 private fun Big(text: String, color: Color = ios.label) = Text(text, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = color)
 
-private fun toast(ctx: android.content.Context, s: String) = Toast.makeText(ctx, s, Toast.LENGTH_SHORT).show()
+private fun toast(ctx: android.content.Context, s: String) = Toast.makeText(ctx, tr(s), Toast.LENGTH_SHORT).show()
 
 @Composable
 private fun ProHub(nav: Nav) {
@@ -152,7 +161,7 @@ fun CalcDialog(start: String, onDismiss: () -> Unit, onUse: (String) -> Unit) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         r.forEach { k ->
                             val op = k in listOf("÷", "×", "−", "+")
-                            Box(Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(10.dp))
+                            Box(Modifier.weight(1f).heightIn(min = 44.dp).clip(RoundedCornerShape(10.dp))
                                 .background(if (op) ios.tint.copy(alpha = 0.15f) else ios.fill)
                                 .clickable {
                                     expr = when (k) { "C" -> ""; "⌫" -> expr.dropLast(1); else -> (expr + k).take(60) }
@@ -185,28 +194,80 @@ private fun VoiceEntryScreen(nav: Nav) {
     var gave by remember { mutableStateOf(true) }
     var saved by remember { mutableStateOf<String?>(null) }
     val parties = remember(Repo.tick) { Repo.parties() }
+    fun onText(txt: String) {
+        heard = txt
+        val p = VoiceParse.parse(txt)
+        val match = parties.firstOrNull { it.name.equals(p.name, true) }
+            ?: parties.firstOrNull { p.name.isNotBlank() && (it.name.startsWith(p.name, true) || p.name.startsWith(it.name, true)) }
+        name = match?.name ?: p.name
+        amount = if (p.amount > 0) p.amount.plain() else ""
+        p.gave?.let { gave = it }
+        saved = null
+    }
+    var listening by remember { mutableStateOf(false) }
+    var partial by remember { mutableStateOf("") }
+    var micDenied by remember { mutableStateOf(false) }
+    var noService by remember { mutableStateOf(false) }
+    var askMic by remember { mutableStateOf(false) }
+    val recognizer = remember {
+        try { if (android.speech.SpeechRecognizer.isRecognitionAvailable(ctx)) android.speech.SpeechRecognizer.createSpeechRecognizer(ctx) else null } catch (_: Throwable) { null }
+    }
+    DisposableEffect(Unit) { onDispose { try { recognizer?.destroy() } catch (_: Throwable) {} } }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
         val txt = res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
-        if (!txt.isNullOrBlank()) {
-            heard = txt
-            val p = VoiceParse.parse(txt)
-            val match = parties.firstOrNull { it.name.equals(p.name, true) }
-                ?: parties.firstOrNull { p.name.isNotBlank() && (it.name.startsWith(p.name, true) || p.name.startsWith(it.name, true)) }
-            name = match?.name ?: p.name
-            amount = if (p.amount > 0) p.amount.plain() else ""
-            p.gave?.let { gave = it }
-            saved = null
-        }
+        if (!txt.isNullOrBlank()) onText(txt)
     }
+    fun speechIntent() = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
+        putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+        putExtra(RecognizerIntent.EXTRA_PROMPT, "Boliye: Ramesh ko 500 diye")
+    }
+    /** fallback: the Google voice popup */
+    fun popup() {
+        try { launcher.launch(speechIntent()) } catch (_: Throwable) { noService = true }
+    }
+    fun startInApp() {
+        val r = recognizer ?: return popup()
+        try {
+            r.setRecognitionListener(object : android.speech.RecognitionListener {
+                override fun onReadyForSpeech(params: android.os.Bundle?) { listening = true; partial = ""; noService = false }
+                override fun onBeginningOfSpeech() {}
+                override fun onRmsChanged(rmsdB: Float) {}
+                override fun onBufferReceived(buffer: ByteArray?) {}
+                override fun onEndOfSpeech() { listening = false }
+                override fun onError(error: Int) {
+                    listening = false
+                    when (error) {
+                        android.speech.SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> micDenied = true
+                        android.speech.SpeechRecognizer.ERROR_NO_MATCH, android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> toast(ctx, "Kuch suna nahi, mic dabakar dobara bolein")
+                        else -> popup()
+                    }
+                }
+                override fun onResults(results: android.os.Bundle?) {
+                    listening = false
+                    results?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.takeIf { it.isNotBlank() }?.let { onText(it) }
+                }
+                override fun onPartialResults(partialResults: android.os.Bundle?) {
+                    partialResults?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let { partial = it }
+                }
+                override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
+            })
+            r.startListening(speechIntent())
+            listening = true
+        } catch (_: Throwable) { listening = false; popup() }
+    }
+    val micPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) { micDenied = false; startInApp() } else micDenied = true
+    }
+    fun hasMic() = androidx.core.content.ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
     fun listen() {
-        val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "Boliye: Ramesh ko 500 diye")
-        }
-        try { launcher.launch(i) } catch (_: Throwable) { toast(ctx, "Is phone me voice typing nahi mili (Google app chahiye)") }
+        if (listening) { try { recognizer?.stopListening() } catch (_: Throwable) {}; listening = false; return }
+        if (recognizer == null) { popup(); return }
+        if (hasMic()) startInApp() else askMic = true
     }
+    if (askMic) ConfirmDialog("Mic ki permission", "Bol kar entry ke liye mic chahiye. Awaaz sirf entry likhne ke liye use hoti hai, kahin bheji ya save nahi hoti.", "Permission do", danger = false,
+        onConfirm = { askMic = false; micPerm.launch(Manifest.permission.RECORD_AUDIO) }, onDismiss = { askMic = false })
     ProPage("Bol kar entry", nav) {
         Card {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -214,8 +275,28 @@ private fun VoiceEntryScreen(nav: Nav) {
                     Icon(Icons.Filled.Mic, "Bolein", tint = Color.White, modifier = Modifier.size(48.dp))
                 }
             }
-            Text("Mic dabao aur bolo", Modifier.fillMaxWidth(), textAlign = TextAlign.Center, color = ios.label, fontSize = 17.sp)
+            Text(if (listening) "Sun raha hoon… bolte rahiye 🎤" else "Mic dabao aur bolo", Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
+                color = if (listening) Color(0xFFFF2D55) else ios.label, fontSize = 17.sp, fontWeight = if (listening) FontWeight.SemiBold else FontWeight.Normal)
+            if (listening && partial.isNotBlank()) Text("\"$partial\"", Modifier.fillMaxWidth(), textAlign = TextAlign.Center, color = ios.secondaryLabel)
+            if (listening) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Color(0xFFFF2D55), trackColor = ios.fill)
             Hint("Jaise: \"Ramesh ko 500 diye\", \"Suresh se 1200 mile\", \"Mohan 300 udhar\". Naya naam ho to party apne aap ban jayegi.")
+        }
+        if (micDenied) Card {
+            Text("Mic ki permission band hai", fontWeight = FontWeight.SemiBold, color = ios.label)
+            Hint("Settings > Permissions > Microphone > Allow karein, phir wapas aakar mic dabayein.")
+            Button(onClick = {
+                try { ctx.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", ctx.packageName, null)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Throwable) {}
+            }, Modifier.fillMaxWidth()) { Text("Settings kholo") }
+            OutlinedButton(onClick = { micDenied = false; popup() }, Modifier.fillMaxWidth()) { Text("Google popup se bolein") }
+        }
+        if (noService) Card {
+            Text("Is phone me awaaz pehchanne wali service nahi mili", fontWeight = FontWeight.SemiBold, color = ios.label)
+            Hint("Play Store se \"Google\" app install/update karein, ya Settings > Apps me \"Speech Services by Google\" chalu karein. Phir dobara mic dabayein.")
+            Button(onClick = {
+                val u = android.net.Uri.parse("market://details?id=com.google.android.googlequicksearchbox")
+                try { ctx.startActivity(Intent(Intent.ACTION_VIEW, u).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                catch (_: Throwable) { try { ctx.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.googlequicksearchbox")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Throwable) {} }
+            }, Modifier.fillMaxWidth()) { Text("Google app kholo / install karo") }
         }
         if (heard.isNotBlank()) {
             Card {
@@ -361,12 +442,12 @@ private fun DueCalendarScreen(nav: Nav) {
                 Row {
                     for (d in 0 until 7) {
                         val n = w * 7 + d - firstDow + 1
-                        if (n < 1 || n > days) Spacer(Modifier.weight(1f).height(48.dp)) else {
+                        if (n < 1 || n > days) Spacer(Modifier.weight(1f).height(fitDp(48.dp))) else {
                             val dayMs = Calendar.getInstance().apply { timeInMillis = start; set(Calendar.DAY_OF_MONTH, n) }.let { startOfDay(it.timeInMillis) }
                             val list = byDay[dayMs]
                             val amt = list?.sumOf { it.second } ?: 0.0
                             val bg = when { sel == dayMs -> ios.tint; list != null && dayMs < today -> IosRed.copy(alpha = 0.18f); list != null -> IosGreen.copy(alpha = 0.18f); else -> Color.Transparent }
-                            Column(Modifier.weight(1f).height(48.dp).padding(2.dp).clip(RoundedCornerShape(8.dp)).background(bg).clickable { sel = dayMs },
+                            Column(Modifier.weight(1f).height(fitDp(48.dp)).padding(2.dp).clip(RoundedCornerShape(8.dp)).background(bg).clickable { sel = dayMs },
                                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                                 Text("$n", fontSize = 14.sp, color = if (sel == dayMs) Color.White else if (dayMs == today) ios.tint else ios.label,
                                     fontWeight = if (dayMs == today) FontWeight.Bold else FontWeight.Normal)
@@ -811,28 +892,124 @@ private fun PayQrScreen(nav: Nav) {
     }
 }
 
-// ------------------------------------------------------------------ 10. visiting card
+// ------------------------------------------------------------------ 10. visiting card (editor, v1.0.46)
 
 @Composable
 private fun VisitingCardScreen(nav: Nav) {
     val ctx = LocalContext.current
-    val tick = Repo.tick
-    var style by remember { mutableStateOf(Repo.setting("vcard_style", "0").toIntOrNull() ?: 0) }
-    val bmp = remember(tick, style) { VisitingCard.make(style) }
+    val start = remember { VCard.current(ctx) }
+    val values = remember { mutableStateMapOf<String, String>().apply { putAll(start.values) } }
+    val show = remember { mutableStateMapOf<String, Boolean>().apply { putAll(start.show) } }
+    var style by remember { mutableStateOf(start.style) }
+    var pos by remember { mutableStateOf(start.photoPos) }
+    var round by remember { mutableStateOf(start.roundPhoto) }
+    var qr by remember { mutableStateOf(start.showQr) }
+    var photo by remember { mutableStateOf(start.photo) }
+    var photoMenu by remember { mutableStateOf(false) }
+    var saved by remember { mutableStateOf(false) }
+    fun cfg() = VCard.Cfg(values.toMap(), show.toMap(), style, pos, round, qr, photo)
+    val bmp = remember(values.toMap(), show.toMap(), style, pos, round, qr, photo) { VCard.render(cfg()) }
+
+    fun setPhoto(f: java.io.File?) {
+        if (f == null) { Toast.makeText(ctx, "Photo nahi khul payi", Toast.LENGTH_SHORT).show(); return }
+        try { f.copyTo(VCard.photoFile(ctx), overwrite = true); f.delete() } catch (_: Throwable) {}
+        photo = PartyPhotos.loadFile(VCard.photoFile(ctx)); if (pos == "none") pos = "left"
+    }
+    val camFile = remember { java.io.File(ctx.cacheDir, "vcard_camera.jpg") }
+    val camUri = remember { androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", camFile) }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) setPhoto(PartyPhotos.prepare(ctx, uri)) }
+    val take = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> if (ok) setPhoto(PartyPhotos.prepare(ctx, camUri)) }
+
     ProPage("Visiting card", nav) {
         Card {
             Image(bmp.asImageBitmap(), "Visiting card", Modifier.fillMaxWidth().aspectRatio(1080f / 640f).clip(RoundedCornerShape(10.dp)))
-            IosSegmented(listOf("Navy", "Green", "Maroon"), listOf("Navy", "Green", "Maroon")[style.coerceIn(0, 2)], { v ->
-                style = listOf("Navy", "Green", "Maroon").indexOf(v).coerceAtLeast(0); Repo.setSetting("vcard_style", style.toString())
-            })
-            Button(onClick = { shareFile(ctx, VisitingCard.saveTemp(ctx, bmp, "visiting-card.png"), "image/png", "Visiting card") }, Modifier.fillMaxWidth()) {
-                Icon(Icons.Filled.Share, null); Spacer(Modifier.width(6.dp)); Text("WhatsApp / share karein")
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(onClick = {
+                    VCard.save(cfg()); saved = true
+                    shareFile(ctx, VisitingCard.saveTemp(ctx, bmp, "visiting-card.png"), "image/png", "Visiting card")
+                }, Modifier.weight(1f)) { Icon(Icons.Filled.Share, null); Spacer(Modifier.width(6.dp)); Text("Share") }
+                OutlinedButton(onClick = {
+                    VCard.save(cfg()); saved = true
+                    val f = saveCardToGallery(ctx, bmp)
+                    Toast.makeText(ctx, if (f) "Card save ho gaya (Gallery > Pictures) ✅" else "Card save ho gaya ✅", Toast.LENGTH_SHORT).show()
+                }, Modifier.weight(1f)) { Text("Save") }
             }
-            Hint("Card par dukan ka naam, phone, pata, GSTIN aur UPI QR Settings se aata hai.")
-            OutlinedButton(onClick = { nav.go(Screen.Settings) }, Modifier.fillMaxWidth()) { Text("Dukan ki details badlein") }
+        }
+        SectionLabel("Photo / logo")
+        Card {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val p = photo
+                Box(Modifier.size(64.dp).clip(if (round) CircleShape else RoundedCornerShape(12.dp)).background(ios.fill).clickable { photoMenu = true }, contentAlignment = Alignment.Center) {
+                    if (p != null) Image(p.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                    else Icon(Icons.Filled.AddAPhoto, null, tint = ios.tint)
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    TextButton(onClick = { photoMenu = true }) { Text(if (p == null) "Photo / logo jodein" else "Photo badlein") }
+                }
+            }
+            Text("Photo kahan ho", fontSize = 13.sp, color = ios.secondaryLabel)
+            IosSegmented(VCard.PHOTO_POS.map { it.second }, (VCard.PHOTO_POS.firstOrNull { it.first == pos } ?: VCard.PHOTO_POS[0]).second,
+                { v -> pos = VCard.PHOTO_POS.first { it.second == v }.first })
+            Row(verticalAlignment = Alignment.CenterVertically) { Text("Gol photo", Modifier.weight(1f), color = ios.label); IosSwitch(round, { round = it }) }
+        }
+        SectionLabel("Design / rang")
+        Card {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                VCard.TEMPLATES.forEachIndexed { i, t ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { style = i }) {
+                        Box(
+                            Modifier.size(64.dp, 40.dp).clip(RoundedCornerShape(8.dp))
+                                .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(t.c1), Color(t.c2))))
+                                .border(if (style == i) 3.dp else 1.dp, if (style == i) ios.tint else ios.separator, RoundedCornerShape(8.dp)),
+                            contentAlignment = Alignment.Center
+                        ) { Box(Modifier.size(20.dp, 4.dp).background(Color(t.accent))) }
+                        Text(t.name, fontSize = 12.sp, color = ios.label)
+                    }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) { Text("UPI QR code dikhao", Modifier.weight(1f), color = ios.label); IosSwitch(qr, { qr = it }) }
+        }
+        SectionLabel("Card ki details (switch se dikhao / chhupao)")
+        Card {
+            VCard.FIELDS.forEach { f ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) {
+                        IosField(values[f.key].orEmpty(), { values[f.key] = it.take(if (f.key == "address" || f.key == "extra") 120 else 60) }, "", placeholder = f.label,
+                            keyboard = when (f.key) { "phone", "phone2" -> androidx.compose.ui.text.input.KeyboardType.Phone; "email" -> androidx.compose.ui.text.input.KeyboardType.Email; else -> androidx.compose.ui.text.input.KeyboardType.Text })
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    IosSwitch(show[f.key] ?: true, { show[f.key] = it })
+                }
+            }
+            Button(onClick = { VCard.save(cfg()); saved = true; Toast.makeText(ctx, "Card save ho gaya ✅", Toast.LENGTH_SHORT).show() }, Modifier.fillMaxWidth()) { Text("Card save karein") }
+            Hint("Khali chhodne par wo line card par nahi aati. Shuru me dukan ka naam, phone, pata, GSTIN aur UPI Settings se bhar diye gaye hain.")
         }
     }
+    if (photoMenu) {
+        val actions = mutableListOf(
+            SheetAction("Photo lo (camera)") { try { camFile.parentFile?.mkdirs(); camFile.createNewFile(); take.launch(camUri) } catch (_: Exception) {} },
+            SheetAction("Gallery se chuno") { try { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) } catch (_: Exception) {} },
+        )
+        if (photo != null) actions.add(SheetAction("Photo hatao", destructive = true) { VCard.photoFile(ctx).delete(); photo = null })
+        IosActionSheet("Card ki photo / logo", actions) { photoMenu = false }
+    }
 }
+
+@Composable
+private fun SectionLabel(t: String) = Text(tr(t).uppercase(), fontSize = 13.sp, color = ios.secondaryLabel, modifier = Modifier.padding(start = 8.dp, top = 6.dp))
+
+private fun saveCardToGallery(ctx: android.content.Context, bmp: android.graphics.Bitmap): Boolean = try {
+    if (android.os.Build.VERSION.SDK_INT >= 29) {
+        val v = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, "visiting-card-${System.currentTimeMillis()}.png")
+            put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png")
+            put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/BahiKhata")
+        }
+        val uri = ctx.contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v)
+        uri?.let { u -> ctx.contentResolver.openOutputStream(u)?.use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) } } != null
+    } else false
+} catch (e: Throwable) { false }
 
 // ------------------------------------------------------------------ 11. CSV export
 
@@ -935,4 +1112,180 @@ private fun TrashScreen(nav: Nav) {
         if (items.isNotEmpty()) TextButton(onClick = { clear = true }, Modifier.fillMaxWidth()) { Text("Sab khaali karein", color = IosRed) }
     }
     if (clear) ConfirmDialog("Recycle bin khaali karein?", "Ye cheezein phir wapas nahi aayengi.", "Khaali karein", onConfirm = { Trash.clear(); ver++ }, onDismiss = { clear = false })
+}
+
+
+// =================================================================== v1.0.46 extras
+
+private data class PosterKind(val key: String, val name: String, val title: String, val sub: String, val details: String)
+private val POSTER_KINDS = listOf(
+    PosterKind("offer", "Offer / Sale", "MEGA SALE", "Har saman par 20% tak chhoot", "Sirf is hafte\nJaldi aayein, stock seemit hai"),
+    PosterKind("festival", "Tyohar badhai", "Shubh Deepawali", "Aapko aur aapke parivar ko dher saari shubhkamnayein", "Tyohar ki khaas chhoot dukan par"),
+    PosterKind("new", "Naya maal", "Naya maal aa gaya!", "Taaza stock, sahi daam", "Aaj hi dukan par aakar dekhein"),
+    PosterKind("timing", "Dukan timing", "Dukan ka samay", "Subah 9 baje se raat 9 baje tak", "Ravivar: dopahar 2 baje tak"),
+    PosterKind("pay", "Scan & Pay (UPI)", "Scan karein, pay karein", "Kisi bhi UPI app se", ""),
+)
+
+private fun renderPoster(ctx: android.content.Context, kind: String, title: String, sub: String, details: String, style: Int): android.graphics.Bitmap {
+    val w = 1080; val h = 1350
+    val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+    val c = android.graphics.Canvas(bmp)
+    val t = VCard.TEMPLATES[style.coerceIn(0, VCard.TEMPLATES.size - 1)]
+    val bg = android.graphics.Paint().apply { shader = android.graphics.LinearGradient(0f, 0f, 0f, h.toFloat(), t.c1, t.c2, android.graphics.Shader.TileMode.CLAMP) }
+    c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), bg)
+    val dec = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = t.accent; alpha = 45 }
+    c.drawCircle(0f, 0f, 320f, dec); c.drawCircle(w.toFloat(), h * 0.62f, 260f, dec)
+    val tp = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = t.text }
+    fun block(s: String, size: Float, bold: Boolean, y: Float, color: Int = t.text, maxLines: Int = 4): Float {
+        if (s.isBlank()) return y
+        tp.textSize = size; tp.color = color; tp.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, if (bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+        val l = android.text.StaticLayout.Builder.obtain(s, 0, s.length, tp, w - 160).setAlignment(android.text.Layout.Alignment.ALIGN_CENTER)
+            .setMaxLines(maxLines).setEllipsize(android.text.TextUtils.TruncateAt.END).build()
+        c.save(); c.translate(80f, y); l.draw(c); c.restore(); return y + l.height
+    }
+    // photo / logo from the visiting card
+    var y = 90f
+    PartyPhotos.loadFile(VCard.photoFile(ctx))?.let { p ->
+        val s = minOf(p.width, p.height); val sq = android.graphics.Bitmap.createBitmap(p, (p.width - s) / 2, (p.height - s) / 2, s, s)
+        val r = android.graphics.RectF(w / 2f - 90f, y, w / 2f + 90f, y + 180f)
+        c.drawOval(android.graphics.RectF(r.left - 6, r.top - 6, r.right + 6, r.bottom + 6), android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = t.accent })
+        c.save(); c.clipPath(android.graphics.Path().apply { addOval(r, android.graphics.Path.Direction.CW) }); c.drawBitmap(sq, null, r, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)); c.restore()
+        y += 210f
+    }
+    y = block(VCard.value("shop"), 48f, true, y, t.text, 2) + 50f
+    y = block(title, if (title.length > 18) 92f else 120f, true, y, t.accent, 3) + 30f
+    y = block(sub, 54f, false, y, t.text, 4) + 40f
+    if (kind == "pay") {
+        val upi = VCard.value("upi").ifBlank { S.upiId }
+        if (upi.contains("@")) {
+            val uri = "upi://pay?pa=" + android.net.Uri.encode(upi) + "&pn=" + android.net.Uri.encode(VCard.value("shop").ifBlank { "Shop" }) + "&cu=INR"
+            Qr.bitmap(uri, 520)?.let { q ->
+                val r = android.graphics.RectF(w / 2f - 260f, y, w / 2f + 260f, y + 520f)
+                c.drawRoundRect(android.graphics.RectF(r.left - 20, r.top - 20, r.right + 20, r.bottom + 20), 30f, 30f, android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt() })
+                c.drawBitmap(q, null, r, null); y += 560f
+            }
+            y = block("UPI: $upi", 40f, false, y, t.text, 1) + 20f
+        } else y = block("UPI ID Settings / Visiting card me daalein", 40f, false, y, t.text, 2)
+    }
+    block(details, 46f, false, y, t.text, 5)
+    val phone = VCard.value("phone"); val addr = VCard.value("address")
+    val foot = listOf(if (phone.isNotBlank()) "📞 $phone" else "", addr).filter { it.isNotBlank() }.joinToString("\n")
+    if (foot.isNotBlank()) {
+        c.drawRect(0f, h - 190f, w.toFloat(), h.toFloat(), android.graphics.Paint().apply { color = 0x55000000 })
+        block(foot, 38f, false, h - 165f, 0xFFFFFFFF.toInt(), 3)
+    }
+    return bmp
+}
+
+@Composable
+private fun PosterScreen(nav: Nav) {
+    val ctx = LocalContext.current
+    var kind by remember { mutableStateOf(POSTER_KINDS[0]) }
+    var title by remember { mutableStateOf(tr(kind.title)) }
+    var sub by remember { mutableStateOf(tr(kind.sub)) }
+    var details by remember { mutableStateOf(tr(kind.details)) }
+    var style by remember { mutableStateOf(Repo.setting("poster_style", "6").toIntOrNull() ?: 6) }
+    val bmp = remember(kind, title, sub, details, style) { renderPoster(ctx, kind.key, title, sub, details, style) }
+    ProPage("Offer poster", nav) {
+        Card {
+            Image(bmp.asImageBitmap(), "Poster", Modifier.fillMaxWidth().aspectRatio(1080f / 1350f).clip(RoundedCornerShape(10.dp)))
+            Button(onClick = { shareFile(ctx, VisitingCard.saveTemp(ctx, bmp, "poster.png"), "image/png", "Poster") }, Modifier.fillMaxWidth()) {
+                Icon(Icons.Filled.Share, null); Spacer(Modifier.width(6.dp)); Text("WhatsApp status / share")
+            }
+        }
+        Card {
+            Text("Poster ka type", fontSize = 13.sp, color = ios.secondaryLabel)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                POSTER_KINDS.forEach { k -> IosPill(k.name, k == kind, { kind = k; title = tr(k.title); sub = tr(k.sub); details = tr(k.details) }) }
+            }
+            Text("Rang", fontSize = 13.sp, color = ios.secondaryLabel)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                VCard.TEMPLATES.forEachIndexed { i, t ->
+                    Box(Modifier.size(44.dp).clip(CircleShape)
+                        .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(t.c1), Color(t.c2))))
+                        .border(if (style == i) 3.dp else 1.dp, if (style == i) ios.tint else ios.separator, CircleShape)
+                        .clickable { style = i; Repo.setSetting("poster_style", i.toString()) })
+                }
+            }
+            IosField(title, { title = it.take(60) }, "", placeholder = "Bada heading")
+            IosField(sub, { sub = it.take(120) }, "", placeholder = "Chhoti line")
+            IosField(details, { details = it.take(200) }, "", placeholder = "Aur details (nayi line ke liye Enter)")
+            Hint("Dukan ka naam, photo/logo, phone aur pata Visiting card se aate hain.")
+        }
+    }
+}
+
+private val READY_MSGS = listOf(
+    "Diwali" to "🪔 Shubh Deepawali! {dukan} ki taraf se aapko aur aapke parivar ko dher saari shubhkamnayein. Tyohar par khaas chhoot — zaroor aayein 🙏",
+    "Holi" to "🎨 Holi ki hardik shubhkamnayein! {dukan} par rang, gulal aur mithai sab uplabdh. Happy Holi 🙏",
+    "Eid" to "🌙 Eid Mubarak! {dukan} ki taraf se aapko dher saari khushiyan 🙏",
+    "Naya saal" to "🎉 Naya saal mubarak ho! {dukan} ki taraf se aapka saal khushiyon bhara ho 🙏",
+    "Chhath / Puja" to "🙏 Puja ki hardik shubhkamnayein! Puja ka saara saman {dukan} par uplabdh hai.",
+    "Offer" to "🔥 Khaas offer! {dukan} par is hafte har saman par chhoot. Jaldi aayein, stock seemit hai.",
+    "Naya maal" to "🆕 Naya maal aa gaya hai! {dukan} par aakar dekhein — taaza stock, sahi daam.",
+    "Dukan band" to "🙏 Soochna: {dukan} kal band rahegi. Parso se dukan roz ki tarah khulegi.",
+    "Dhanyavaad" to "🙏 {dukan} se kharidari ke liye dhanyavaad! Aapka bharosa hi hamari taakat hai. Phir aaiyega.",
+    "Payment request" to "Namaste 🙏 {dukan} ka baaki hisaab jab sahi lage tab chuka dein. UPI se bhi bhej sakte hain. Dhanyavaad.",
+    "Home delivery" to "🛵 Ab {dukan} se ghar baithe saman mangayein! Call ya WhatsApp karein, hum ghar tak pahunchayenge.",
+    "Janamdin" to "🎂 Janamdin ki dher saari badhai! {dukan} ki taraf se aapko khaas shubhkamnayein 🙏",
+)
+
+@Composable
+private fun ReadyMsgScreen(nav: Nav) {
+    val ctx = LocalContext.current
+    val shop = remember { VCard.value("shop").ifBlank { Repo.businessName() } }
+    var editing by remember { mutableStateOf<String?>(null) }
+    ProPage("Tyohar / offer message", nav) {
+        Hint("Message chuno, badlo aur WhatsApp ya SMS se bhejo. {dukan} ki jagah aapki dukan ka naam aata hai.")
+        READY_MSGS.forEach { (name, body) ->
+            val text = tr(body).replace("{dukan}", shop)
+            Card(Modifier.clickable { editing = text }) {
+                Text(name, fontWeight = FontWeight.SemiBold, color = ios.label)
+                androidx.compose.material3.Text(text, color = ios.secondaryLabel, fontSize = 14.sp)
+            }
+        }
+    }
+    editing?.let { start ->
+        var t by remember(start) { mutableStateOf(start) }
+        IosAlert(onDismissRequest = { editing = null }, title = { Text("Message bhejein") },
+            text = { IosField(t, { t = it.take(600) }, "", placeholder = "Message") },
+            confirmButton = { TextButton(onClick = { shareText(ctx, t); editing = null }) { Text("Bhejein") } },
+            dismissButton = { TextButton(onClick = {
+                val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("msg", t)); toast(ctx, "Copy ho gaya ✅"); editing = null
+            }) { Text("Copy") } })
+    }
+}
+
+@Composable
+private fun DiaryScreen(nav: Nav) {
+    val tick = Repo.tick
+    val notes = remember(tick) {
+        try { val a = JSONArray(Repo.setting("diary_notes", "[]")); (0 until a.length()).map { a.getJSONObject(it) } } catch (_: Throwable) { emptyList() }
+    }
+    fun save(list: List<JSONObject>) = Repo.setSetting("diary_notes", JSONArray(list).toString())
+    var txt by remember { mutableStateOf("") }
+    ProPage("Dukan diary", nav) {
+        Card {
+            IosField(txt, { txt = it.take(300) }, "", placeholder = "Yaad rakhne wali baat (jaise: Ramesh ko maal bhejna)")
+            Button(onClick = {
+                if (txt.isNotBlank()) { save(listOf(JSONObject().put("t", txt.trim()).put("d", System.currentTimeMillis()).put("done", false)) + notes); txt = "" }
+            }, Modifier.fillMaxWidth()) { Text("Jodein") }
+        }
+        if (notes.isEmpty()) Hint("Abhi koi note nahi. Order, maal mangwana, kisi ko call karna — sab yahan likh lo.")
+        notes.forEachIndexed { i, n ->
+            val done = n.optBoolean("done")
+            Card {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = done, onCheckedChange = { v -> save(notes.mapIndexed { j, o -> if (j == i) JSONObject(o.toString()).put("done", v) else o }) })
+                    Column(Modifier.weight(1f)) {
+                        androidx.compose.material3.Text(n.optString("t"), color = if (done) ios.secondaryLabel else ios.label,
+                            textDecoration = if (done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null)
+                        Text(fmtDate(n.optLong("d")), fontSize = 12.sp, color = ios.secondaryLabel)
+                    }
+                    IconButton(onClick = { save(notes.filterIndexed { j, _ -> j != i }) }) { Icon(Icons.Filled.Delete, "Hatao", tint = IosRed) }
+                }
+            }
+        }
+    }
 }

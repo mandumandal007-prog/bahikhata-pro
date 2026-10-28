@@ -14,6 +14,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         super.onCreate(savedInstanceState)
         Repo.init(this)
         com.bahikhata.app.util.UiPrefs.init(this)
+        com.bahikhata.app.util.Lang.init(this)
         Cloud.init(this)
         if (com.bahikhata.app.util.S.autoRem) com.bahikhata.app.util.AutoRemind.sync(this)
         com.bahikhata.app.util.Trash.init(this)

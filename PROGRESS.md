@@ -23,3 +23,9 @@
 ## v1.0.45 (9:36 AM) — app lock upgrade + 14 business tools
 - 9:50 edits: AuthPin (androidx.biometric, 5-try lockout), Settings app-lock rows, util/Pro.kt (Trash file, Calc, CSV, DailySummary worker, VoiceParse, VisitingCard, QR), ui/ProScreens.kt (hub + 13 screens), NumField calculator, Repo trash hooks + rowsJson/restoreRows/dueEntries. No schema change. BUILD10 started.
 - BUILD10 green 9:47 (twice). PUSHING commit45 at 9:48 — check commits before re-pushing!
+- PUSHED 34ffae8 at 9:48. Do NOT push again. NEXT: CI poll, download, verify, changelog.
+- ALL DONE 9:59: CI 45 green, release v1.0.45, APK verified (com.bhaikhata.app, 45, same cert), copied to latest + BahiKhata-Pro-v1.0.45.apk. Changelog appended.
+
+## v1.0.46 (10:10 AM) — text fit, themes, language, visiting card editor
+- 10:22 edits: ui/I18nText.kt (same-package Text shadow: Lang.tr + ellipsis for 1-2 line texts; fitDp), util/I18n.kt (Lang: hinglish default, hi/en/bn/mr/gu from assets/i18n/*.json, exact + phrase match), ui/Themes.kt (9 themes) + UiPrefs.appTheme, Settings > Dikhawat (Appearance): theme swatches + language list. IosNavBar large title height now from sp (was fixed 52dp → cut title), nav/segmented/search/tab bar heights fitDp, buttons heightIn(min). util/VCard.kt + new VisitingCardScreen (photo/logo gallery+camera, 11 fields with show/hide, 9 templates, photo position, QR on/off, save to gallery, share). Voice entry: RECORD_AUDIO + in-app SpeechRecognizer, popup fallback, Settings kholo. Extras: Offer poster, Tyohar/offer messages, Dukan diary. No schema change.
+- BUILD11 green 10:24 (VERSION_CODE=46). PUSHING commit46 — check commits before re-pushing!

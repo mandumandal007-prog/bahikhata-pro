@@ -114,7 +114,7 @@ fun AuthScreen(firstLaunch: Boolean, onDone: () -> Unit) {
                     )
                 }
                 Spacer(Modifier.height(20.dp))
-                Button(onClick = { finish() }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Aage badhein") }
+                Button(onClick = { finish() }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Aage badhein") }
                 return@Column
             }
 
@@ -179,7 +179,7 @@ fun AuthScreen(firstLaunch: Boolean, onDone: () -> Unit) {
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth().height(52.dp)
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
             ) {
                 if (busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                 else Text(if (signup) "Account banayein" else "Login", fontSize = 16.sp)

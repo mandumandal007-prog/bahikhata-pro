@@ -55,7 +55,8 @@ fun BahiTheme(content: @Composable () -> Unit) {
     @Suppress("UNUSED_VARIABLE") val t = Repo.tick
     androidx.compose.runtime.remember(t) { com.bahikhata.app.util.S.refreshGlobals() }
     val mode = Repo.setting("theme", "system")
-    val dark = when (mode) {
+    val preset = appTheme(UiPrefs.appTheme)
+    val dark = if (preset.forceDark) true else when (mode) {
         "dark" -> true
         "light" -> false
         else -> isSystemInDarkTheme()
@@ -63,8 +64,9 @@ fun BahiTheme(content: @Composable () -> Unit) {
     val dynamic = Repo.setting("dynamic", "0") == "1" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val ctx = LocalContext.current
     val tint = if (dynamic) (if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)).primary
-    else accentColor(UiPrefs.accent, dark)
-    val c = iosColors(dark, tint)
+    else if (preset.key == "classic" || preset.key == "amoled") accentColor(UiPrefs.accent, dark)
+    else if (dark) preset.tintDark else preset.tintLight
+    val c = iosColors(dark, tint).withPreset(preset)
     val container = tint.copy(alpha = 0.15f).compositeOver(c.cell)
     val colors = if (dark) darkColorScheme(
         primary = tint, onPrimary = Color.White, primaryContainer = container, onPrimaryContainer = tint,

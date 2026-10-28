@@ -238,7 +238,7 @@ private fun ClassicTabBar(nav: Nav, tabs: List<Tab>, labels: Boolean) {
     val tap = rememberHaptic()
     Column(Modifier.fillMaxWidth().background(ios.barBg)) {
         Hairline()
-        Row(Modifier.fillMaxWidth().navigationBarsPadding().height(if (labels) 54.dp else 48.dp)) {
+        Row(Modifier.fillMaxWidth().navigationBarsPadding().height(fitDp(if (labels) 54.dp else 48.dp))) {
             tabs.forEach { tab ->
                 val sel = nav.tab == tab
                 val color = if (sel) ios.tint else ios.gray
@@ -281,7 +281,7 @@ private fun FloatingTabBar(nav: Nav, tabs: List<Tab>, labels: Boolean) {
                 .clip(shape)
                 .background(barColor)
                 .border(0.5.dp, ios.separator, shape)
-                .height(if (labels) 62.dp else 54.dp)
+                .height(fitDp(if (labels) 62.dp else 54.dp))
                 .padding(horizontal = 6.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {

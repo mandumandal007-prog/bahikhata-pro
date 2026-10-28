@@ -138,7 +138,8 @@ fun IosNavBar(
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val density = LocalDensity.current
-    val largePx = with(density) { 52.dp.toPx() }
+    // large title area grows with the phone's font size (was a fixed 52dp, which cut the title in half on big fonts)
+    val largePx = with(density) { 38.sp.toPx() + (if (subtitle != null) 18.sp.toPx() else 0f) + 8.dp.toPx() }
     if (behavior != null) {
         SideEffect { if (behavior.state.heightOffsetLimit != -largePx) behavior.state.heightOffsetLimit = -largePx }
     }
@@ -146,7 +147,7 @@ fun IosNavBar(
     val fraction = if (behavior == null) 1f else (-offset / largePx).coerceIn(0f, 1f)
     val bg = if (fraction > 0.98f) ios.barBg else ios.groupedBg
     Column(Modifier.fillMaxWidth().background(bg).statusBarsPadding()) {
-        Box(Modifier.fillMaxWidth().height(44.dp)) {
+        Box(Modifier.fillMaxWidth().heightIn(min = 44.dp).height(fitDp(44.dp))) {
             Row(Modifier.align(Alignment.CenterStart).padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (onBack != null) {
                     Row(
@@ -240,7 +241,7 @@ fun GroupCell(
 
 @Composable
 fun SectionHeader(text: String, modifier: Modifier = Modifier) {
-    Text(text.uppercase(), modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 6.dp),
+    Text(com.bahikhata.app.util.tr(text).uppercase(), modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 6.dp),
         fontSize = 13.sp, color = ios.secondaryLabel, letterSpacing = 0.1.sp)
 }
 
@@ -284,7 +285,7 @@ fun IosSwitch(checked: Boolean, onCheckedChange: ((Boolean) -> Unit)?, modifier:
 fun IosSegmented(options: List<String>, selected: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
     val tap = rememberHaptic()
     val idx = options.indexOf(selected).coerceAtLeast(0)
-    BoxWithConstraints(modifier.fillMaxWidth().height(34.dp).clip(RoundedCornerShape(9.dp)).background(ios.segTrack).padding(2.dp)) {
+    BoxWithConstraints(modifier.fillMaxWidth().height(fitDp(34.dp)).clip(RoundedCornerShape(9.dp)).background(ios.segTrack).padding(2.dp)) {
         val w = maxWidth / options.size
         val x by animateDpAsState(w * idx, tween(220), label = "seg")
         Box(Modifier.offset(x = x).width(w).fillMaxHeight().shadow(1.5.dp, RoundedCornerShape(7.dp)).clip(RoundedCornerShape(7.dp)).background(ios.segThumb))
@@ -326,7 +327,7 @@ fun IosPills(options: List<String>, selected: String, onSelect: (String) -> Unit
 @Composable
 fun IosSearchField(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier) {
     Row(
-        modifier.fillMaxWidth().height(38.dp).clip(RoundedCornerShape(10.dp)).background(ios.fill).padding(horizontal = 8.dp),
+        modifier.fillMaxWidth().height(fitDp(38.dp)).clip(RoundedCornerShape(10.dp)).background(ios.fill).padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(Icons.Filled.Search, null, tint = ios.gray, modifier = Modifier.size(20.dp))
@@ -528,13 +529,13 @@ fun IosActionSheet(title: String?, actions: List<SheetAction>, onDismiss: () -> 
                     }
                     actions.forEachIndexed { i, a ->
                         if (i > 0) Hairline()
-                        Box(Modifier.fillMaxWidth().height(57.dp).clickable { a.onClick(); onDismiss() }, contentAlignment = Alignment.Center) {
+                        Box(Modifier.fillMaxWidth().heightIn(min = 57.dp).clickable { a.onClick(); onDismiss() }, contentAlignment = Alignment.Center) {
                             Text(a.label, fontSize = 19.sp, color = if (a.destructive) IosRed else ios.tint, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Box(Modifier.fillMaxWidth().height(57.dp).clip(RoundedCornerShape(14.dp)).background(ios.alertBg).clickable { onDismiss() },
+                Box(Modifier.fillMaxWidth().heightIn(min = 57.dp).clip(RoundedCornerShape(14.dp)).background(ios.alertBg).clickable { onDismiss() },
                     contentAlignment = Alignment.Center) {
                     Text("Cancel", fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = ios.tint)
                 }

@@ -169,7 +169,7 @@ fun StatBox(label: String, value: String, color: Color, modifier: Modifier = Mod
 @Composable
 fun SectionCard(title: String? = null, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Column(modifier.fillMaxWidth()) {
-        if (title != null) Text(title.uppercase(), Modifier.padding(start = 16.dp, bottom = 6.dp, top = 4.dp), fontSize = 13.sp,
+        if (title != null) Text(com.bahikhata.app.util.tr(title).uppercase(), Modifier.padding(start = 16.dp, bottom = 6.dp, top = 4.dp), fontSize = 13.sp,
             color = ios.secondaryLabel, maxLines = 2)
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(ios.cell).padding(16.dp)) {
             CompositionLocalProvider(LocalOnCell provides true) { content() }
@@ -223,10 +223,10 @@ fun KeyValue(label: String, value: String, bold: Boolean = false, color: Color =
 fun BigButton(text: String, color: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Button(
         onClick = onClick,
-        modifier = modifier.height(52.dp),
+        modifier = modifier.heightIn(min = 52.dp),
         colors = ButtonDefaults.buttonColors(containerColor = color, contentColor = Color.White),
         shape = RoundedCornerShape(14.dp)
-    ) { Text(text, fontWeight = FontWeight.Bold) }
+    ) { Text(text, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
 }
 
 @Composable

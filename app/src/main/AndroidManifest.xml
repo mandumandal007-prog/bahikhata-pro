@@ -11,8 +11,12 @@
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <!-- v1.0.45: daily summary notification (asked only when turned on) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- v1.0.46: microphone for in-app voice entry (asked only when the mic is tapped) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <queries>
         <intent><action android:name="android.speech.RecognitionService" /></intent>
+        <intent><action android:name="android.speech.action.RECOGNIZE_SPEECH" /></intent>
     </queries>
 
     <application
